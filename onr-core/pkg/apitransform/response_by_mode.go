@@ -34,8 +34,8 @@ func SupportsResponseMapMode(mode string) bool {
 // by mode and returns the transformed response object plus its downstream
 // content type.
 func MapResponseBodyByMode(mode string, body []byte) (map[string]any, string, error) {
-	var root map[string]any
-	if err := json.Unmarshal(body, &root); err != nil {
+	root, err := unmarshalResponseBodyObject(body)
+	if err != nil {
 		return nil, "", err
 	}
 	out, err := MapResponseObjectByMode(mode, root)
@@ -48,37 +48,26 @@ func MapResponseBodyByMode(mode string, body []byte) (map[string]any, string, er
 func MapResponseObjectByMode(mode string, root map[string]any) (map[string]any, error) {
 	switch NormalizeResponseMapMode(mode) {
 	case "openai_responses_to_openai_chat":
-		return mapResponseObjectViaBytes(root, MapOpenAIResponsesToChatCompletions)
+		return MapOpenAIResponsesToChatCompletionsObject(root)
 	case "anthropic_to_openai_chat":
 		return MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	case "gemini_to_openai_chat":
 		return MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(root)
 	case "openai_to_anthropic_messages":
-		return mapResponseObjectViaBytes(root, MapOpenAIChatCompletionsToClaudeMessagesResponse)
+		return MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
 	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":
-		return mapResponseObjectViaBytes(root, MapOpenAIChatCompletionsToGeminiGenerateContentResponse)
+		return MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject(root)
 	default:
 		return nil, unsupportedModeError("resp_map", mode)
 	}
 }
 
-func mapResponseObjectViaBytes(
-	root map[string]any,
-	transform func([]byte) ([]byte, error),
-) (map[string]any, error) {
-	body, err := json.Marshal(root)
-	if err != nil {
+func unmarshalResponseBodyObject(body []byte) (map[string]any, error) {
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
 		return nil, err
 	}
-	out, err := transform(body)
-	if err != nil {
-		return nil, err
-	}
-	var mapped map[string]any
-	if err := json.Unmarshal(out, &mapped); err != nil {
-		return nil, err
-	}
-	return mapped, nil
+	return root, nil
 }
 
 // TransformNonStreamResponseBody applies the shared non-stream resp_map flow:
