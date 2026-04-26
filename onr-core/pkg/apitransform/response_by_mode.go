@@ -1,6 +1,7 @@
 package apitransform
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -30,27 +31,54 @@ func SupportsResponseMapMode(mode string) bool {
 }
 
 // MapResponseBodyByMode runs the shared non-stream resp_map transform selected
-// by mode and returns the transformed body plus its downstream content type.
-func MapResponseBodyByMode(mode string, body []byte) ([]byte, string, error) {
+// by mode and returns the transformed response object plus its downstream
+// content type.
+func MapResponseBodyByMode(mode string, body []byte) (map[string]any, string, error) {
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, "", err
+	}
+	out, err := MapResponseObjectByMode(mode, root)
+	if err != nil {
+		return nil, "", err
+	}
+	return out, contentTypeJSON, nil
+}
+
+func MapResponseObjectByMode(mode string, root map[string]any) (map[string]any, error) {
 	switch NormalizeResponseMapMode(mode) {
 	case "openai_responses_to_openai_chat":
-		out, err := MapOpenAIResponsesToChatCompletions(body)
-		return out, contentTypeJSON, err
+		return mapResponseObjectViaBytes(root, MapOpenAIResponsesToChatCompletions)
 	case "anthropic_to_openai_chat":
-		out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(body)
-		return out, contentTypeJSON, err
+		return MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	case "gemini_to_openai_chat":
-		out, err := MapGeminiGenerateContentToOpenAIChatCompletionsResponse(body)
-		return out, contentTypeJSON, err
+		return MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(root)
 	case "openai_to_anthropic_messages":
-		out, err := MapOpenAIChatCompletionsToClaudeMessagesResponse(body)
-		return out, contentTypeJSON, err
+		return mapResponseObjectViaBytes(root, MapOpenAIChatCompletionsToClaudeMessagesResponse)
 	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":
-		out, err := MapOpenAIChatCompletionsToGeminiGenerateContentResponse(body)
-		return out, contentTypeJSON, err
+		return mapResponseObjectViaBytes(root, MapOpenAIChatCompletionsToGeminiGenerateContentResponse)
 	default:
-		return nil, "", unsupportedModeError("resp_map", mode)
+		return nil, unsupportedModeError("resp_map", mode)
 	}
+}
+
+func mapResponseObjectViaBytes(
+	root map[string]any,
+	transform func([]byte) ([]byte, error),
+) (map[string]any, error) {
+	body, err := json.Marshal(root)
+	if err != nil {
+		return nil, err
+	}
+	out, err := transform(body)
+	if err != nil {
+		return nil, err
+	}
+	var mapped map[string]any
+	if err := json.Unmarshal(out, &mapped); err != nil {
+		return nil, err
+	}
+	return mapped, nil
 }
 
 // TransformNonStreamResponseBody applies the shared non-stream resp_map flow:
@@ -62,20 +90,20 @@ func TransformNonStreamResponseBody(
 	body []byte,
 	contentType string,
 	contentEncoding string,
-) ([]byte, string, bool, error) {
+) (map[string]any, string, bool, error) {
 	if statusCode >= http.StatusBadRequest {
-		return body, contentType, false, nil
+		return nil, contentType, false, nil
 	}
 	decoded, _, err := DecodeResponseBody(body, contentEncoding)
 	if err != nil {
 		return nil, "", false, err
 	}
 	if !SupportsResponseMapMode(mode) {
-		return body, contentType, false, nil
+		return nil, contentType, false, nil
 	}
-	out, outCT, err := MapResponseBodyByMode(mode, decoded)
+	outObj, outCT, err := MapResponseBodyByMode(mode, decoded)
 	if err != nil {
 		return nil, "", false, err
 	}
-	return out, outCT, true, nil
+	return outObj, outCT, true, nil
 }

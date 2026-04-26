@@ -183,88 +183,103 @@ func MapClaudeMessagesResponseToOpenAIChatCompletions(body []byte) ([]byte, erro
 // MapClaudeMessagesResponseToOpenAIChatCompletionsObject maps Claude messages response object
 // to OpenAI chat.completions response object.
 func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
-	content, _ := root["content"].([]any)
-	if len(content) == 0 {
-		return nil, fmt.Errorf("content is required")
+	var src apitypes.ClaudeResponse
+	if err := src.FromMap(root); err != nil {
+		return nil, err
 	}
-
-	msg := apitypes.JSONObject{
-		"role":    openAIRoleAssistant,
-		"content": "",
-	}
-	textParts := make([]string, 0, len(content))
-	toolCalls := make([]any, 0, 2)
-	for _, raw := range content {
-		item, _ := raw.(map[string]any)
-		if item == nil {
+	choices := make([]any, 0)
+	toolCalls := make([]any, 0)
+	choiceIndex := 0
+	for _, content := range src.Content {
+		if content == nil {
 			continue
 		}
-		switch strings.TrimSpace(jsonutil.CoerceString(item["type"])) {
-		case chatContentTypeText:
-			if t := strings.TrimSpace(jsonutil.CoerceString(item["text"])); t != "" {
-				textParts = append(textParts, t)
-			}
-		case claudeContentTypeToolUse:
-			name := strings.TrimSpace(jsonutil.CoerceString(item["name"]))
-			if name == "" {
-				continue
-			}
-			argStr := "{}"
-			if item["input"] != nil {
-				if b, err := json.Marshal(item["input"]); err == nil {
-					argStr = string(b)
-				}
-			}
+		switch v := content.(type) {
+		case *apitypes.ClaudeToolUseContent:
+			args, _ := json.Marshal(v.Input)
 			toolCalls = append(toolCalls, apitypes.JSONObject{
-				"id":   strings.TrimSpace(jsonutil.CoerceString(item["id"])),
+				"id":   v.Id,
 				"type": chatRoleFunction,
 				"function": apitypes.JSONObject{
-					"name":      name,
-					"arguments": argStr,
+					"name":      v.Name,
+					"arguments": string(args),
 				},
 			})
+		case *apitypes.ClaudeTextContent:
+			if v.Text == "" {
+				continue
+			}
+			message := apitypes.JSONObject{
+				"role":    openAIRoleAssistant,
+				"content": v.Text,
+			}
+			if len(toolCalls) > 0 {
+				message["tool_calls"] = toolCalls
+			}
+			choice := apitypes.JSONObject{
+				"index":         choiceIndex,
+				"message":       message,
+				"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
+			}
+			toolCalls = nil
+			choices = append(choices, choice)
+			choiceIndex++
+		case *apitypes.ClaudeThinkingContent:
+			if v.Thinking == "" {
+				continue
+			}
+			message := apitypes.JSONObject{
+				"role":    openAIRoleAssistant,
+				"content": v.Thinking,
+			}
+			if len(toolCalls) > 0 {
+				message["tool_calls"] = toolCalls
+			}
+			choice := apitypes.JSONObject{
+				"index":         choiceIndex,
+				"message":       message,
+				"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
+			}
+			toolCalls = nil
+			choices = append(choices, choice)
+			choiceIndex++
 		}
 	}
 	if len(toolCalls) > 0 {
-		msg["tool_calls"] = toolCalls
-	} else {
-		msg["content"] = strings.Join(textParts, "\n")
+		choices = append(choices, apitypes.JSONObject{
+			"index": choiceIndex,
+			"message": apitypes.JSONObject{
+				"role":       openAIRoleAssistant,
+				"tool_calls": toolCalls,
+			},
+			"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
+		})
 	}
-
-	finishReason := finishReasonStop
-	switch strings.TrimSpace(jsonutil.CoerceString(root["stop_reason"])) {
-	case claudeStopReasonMax:
-		finishReason = finishReasonLength
-	case claudeContentTypeToolUse:
-		finishReason = finishReasonToolCalls
-	}
-
-	usage := apitypes.JSONObject{}
-	if u, _ := root["usage"].(map[string]any); u != nil {
-		p := jsonutil.CoerceInt(u["input_tokens"])
-		c := jsonutil.CoerceInt(u["output_tokens"])
-		usage["prompt_tokens"] = p
-		usage["completion_tokens"] = c
-		usage["total_tokens"] = p + c
+	if len(choices) == 0 {
+		return nil, fmt.Errorf("content is required")
 	}
 
 	out := apitypes.JSONObject{
-		"id":      normalizeChatCompletionID(jsonutil.CoerceString(root["id"])),
+		"id":      normalizeChatCompletionID(src.Id),
 		"object":  "chat.completion",
 		"created": time.Now().Unix(),
-		"model":   jsonutil.CoerceString(root["model"]),
-		"choices": []any{
-			apitypes.JSONObject{
-				"index":         0,
-				"message":       msg,
-				"finish_reason": finishReason,
-			},
-		},
-	}
-	if len(usage) > 0 {
-		out["usage"] = usage
+		"model":   src.Model,
+		"choices": choices,
 	}
 	return out, nil
+}
+
+func stopReasonClaude2OpenAI(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "end_turn", "stop_sequence":
+		return finishReasonStop
+	case claudeStopReasonMax:
+		return finishReasonLength
+	case claudeContentTypeToolUse:
+		return finishReasonToolCalls
+	default:
+		return strings.TrimSpace(reason)
+	}
 }
 
 func normalizeChatCompletionID(id string) string {

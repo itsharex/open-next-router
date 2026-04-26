@@ -85,7 +85,7 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_Basic(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	s := string(out)
-	if !containsAll(s, `"object":"chat.completion"`, `"model":"claude-3-5-sonnet-20240620"`, `"content":"hello"`, `"total_tokens":7`) {
+	if !containsAll(s, `"object":"chat.completion"`, `"model":"claude-3-5-sonnet-20240620"`, `"content":"hello"`, `"finish_reason":"stop"`) {
 		t.Fatalf("unexpected mapped output: %s", s)
 	}
 }
