@@ -71,28 +71,23 @@ func unmarshalResponseBodyObject(body []byte) (map[string]any, error) {
 }
 
 // TransformNonStreamResponseBody applies the shared non-stream resp_map flow:
-// skip on upstream errors, decode the upstream body when needed, dispatch by
-// mode, and return whether a transform was actually applied.
+// skip on upstream errors, dispatch by mode, and return whether a transform
+// was actually applied.
 func TransformNonStreamResponseBody(
 	statusCode int,
 	mode string,
-	body []byte,
+	body map[string]any,
 	contentType string,
-	contentEncoding string,
 ) (map[string]any, string, bool, error) {
 	if statusCode >= http.StatusBadRequest {
 		return nil, contentType, false, nil
 	}
-	decoded, _, err := DecodeResponseBody(body, contentEncoding)
-	if err != nil {
-		return nil, "", false, err
-	}
 	if !SupportsResponseMapMode(mode) {
 		return nil, contentType, false, nil
 	}
-	outObj, outCT, err := MapResponseBodyByMode(mode, decoded)
+	outObj, err := MapResponseObjectByMode(mode, body)
 	if err != nil {
 		return nil, "", false, err
 	}
-	return outObj, outCT, true, nil
+	return outObj, contentTypeJSON, true, nil
 }

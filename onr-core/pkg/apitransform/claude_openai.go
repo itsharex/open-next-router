@@ -187,9 +187,8 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 	if err := src.FromMap(root); err != nil {
 		return nil, err
 	}
-	choices := make([]any, 0)
 	toolCalls := make([]any, 0)
-	choiceIndex := 0
+	contentParts := make([]string, 0)
 	for _, content := range src.Content {
 		if content == nil {
 			continue
@@ -209,55 +208,31 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 			if v.Text == "" {
 				continue
 			}
-			message := apitypes.JSONObject{
-				"role":    openAIRoleAssistant,
-				"content": v.Text,
-			}
-			if len(toolCalls) > 0 {
-				message["tool_calls"] = toolCalls
-			}
-			choice := apitypes.JSONObject{
-				"index":         choiceIndex,
-				"message":       message,
-				"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
-			}
-			toolCalls = nil
-			choices = append(choices, choice)
-			choiceIndex++
+			contentParts = append(contentParts, v.Text)
 		case *apitypes.ClaudeThinkingContent:
 			if v.Thinking == "" {
 				continue
 			}
-			message := apitypes.JSONObject{
-				"role":    openAIRoleAssistant,
-				"content": v.Thinking,
-			}
-			if len(toolCalls) > 0 {
-				message["tool_calls"] = toolCalls
-			}
-			choice := apitypes.JSONObject{
-				"index":         choiceIndex,
-				"message":       message,
-				"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
-			}
-			toolCalls = nil
-			choices = append(choices, choice)
-			choiceIndex++
+			contentParts = append(contentParts, v.Thinking)
 		}
 	}
-	if len(toolCalls) > 0 {
-		choices = append(choices, apitypes.JSONObject{
-			"index": choiceIndex,
-			"message": apitypes.JSONObject{
-				"role":       openAIRoleAssistant,
-				"tool_calls": toolCalls,
-			},
-			"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
-		})
-	}
-	if len(choices) == 0 {
+	if len(contentParts) == 0 && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("content is required")
 	}
+	message := apitypes.JSONObject{
+		"role": openAIRoleAssistant,
+	}
+	if len(contentParts) > 0 {
+		message["content"] = strings.Join(contentParts, "")
+	}
+	if len(toolCalls) > 0 {
+		message["tool_calls"] = toolCalls
+	}
+	choices := []any{apitypes.JSONObject{
+		"index":         0,
+		"message":       message,
+		"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
+	}}
 
 	out := apitypes.JSONObject{
 		"id":      normalizeChatCompletionID(src.Id),

@@ -289,7 +289,11 @@ func mapListValue(m map[string]any, key string) ([]map[string]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s item must be map[string]any, got %T", key, item)
 		}
-		out = append(out, mv)
+		copied := make(map[string]any, len(mv))
+		for k, v := range mv {
+			copied[k] = v
+		}
+		out = append(out, copied)
 	}
 	return out, nil
 }

@@ -59,8 +59,8 @@ func TestMapResponseBodyByMode_OpenAIResponsesToChat(t *testing.T) {
 }
 
 func TestTransformNonStreamResponseBody_UnsupportedMode(t *testing.T) {
-	in := []byte(`{"id":"x"}`)
-	out, outCT, changed, err := TransformNonStreamResponseBody(200, "unknown_mode", in, "application/json", "")
+	in := map[string]any{"id": "x"}
+	out, outCT, changed, err := TransformNonStreamResponseBody(200, "unknown_mode", in, "application/json")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +93,15 @@ func TestTransformNonStreamResponseBody_Gzip(t *testing.T) {
 		t.Fatalf("gzip close: %v", err)
 	}
 
-	out, outCT, changed, err := TransformNonStreamResponseBody(200, "openai_responses_to_openai_chat", buf.Bytes(), "application/json", "gzip")
+	decoded, _, err := DecodeResponseBody(buf.Bytes(), "gzip")
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(decoded, &root); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	out, outCT, changed, err := TransformNonStreamResponseBody(200, "openai_responses_to_openai_chat", root, "application/json")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

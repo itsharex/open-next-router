@@ -252,12 +252,25 @@ func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconf
 	if respDir == nil || respDir.Op != "resp_map" {
 		return respOutBody, nil, outCT, false, nil
 	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return respOutBody, nil, outCT, false, nil
+	}
+	if !apitransform.SupportsResponseMapMode(respDir.Mode) {
+		return respOutBody, nil, outCT, false, nil
+	}
+	decoded, _, err := apitransform.DecodeResponseBody(respBody, resp.Header.Get("Content-Encoding"))
+	if err != nil {
+		return nil, nil, outCT, false, err
+	}
+	var root map[string]any
+	if err := json.Unmarshal(decoded, &root); err != nil {
+		return nil, nil, outCT, false, err
+	}
 	outObj, outCT, changed, err := apitransform.TransformNonStreamResponseBody(
 		resp.StatusCode,
 		respDir.Mode,
-		respBody,
+		root,
 		outCT,
-		resp.Header.Get("Content-Encoding"),
 	)
 	if err != nil {
 		return nil, nil, outCT, changed, err
