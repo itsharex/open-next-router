@@ -90,6 +90,7 @@ func TestApply_MultipartPreservesOriginalBody(t *testing.T) {
 	}
 }
 
+//gocyclo:ignore
 func TestApplyReqMap_OpenAIChatToAnthropicMessages_UsesTypedAnthropicConversion(t *testing.T) {
 	t.Parallel()
 

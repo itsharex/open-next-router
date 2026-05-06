@@ -3549,111 +3549,128 @@ func decodeClaudeContentFromMap(m map[string]any) (ClaudeContent, error) {
 	if !ok {
 		return nil, fmt.Errorf("claude content type must be string")
 	}
+	if content, matched, err := decodeClaudeContentFromMapCore(typeName, m); matched {
+		return content, err
+	}
+	if content, matched, err := decodeClaudeContentFromMapExtended(typeName, m); matched {
+		return content, err
+	}
+	return nil, fmt.Errorf("unsupported claude content type: %q", typeName)
+}
+
+func decodeClaudeContentFromMapCore(typeName string, m map[string]any) (ClaudeContent, bool, error) {
 	switch typeName {
 	case "text":
 		var v ClaudeTextContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "image":
 		var v ClaudeImageContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "document":
 		var v ClaudeDocumentContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "search_result":
 		var v ClaudeSearchResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "thinking":
 		var v ClaudeThinkingContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "redacted_thinking":
 		var v ClaudeRedactedThinkingContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "tool_use":
 		var v ClaudeToolUseContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "tool_result":
 		var v ClaudeToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "tool_reference":
 		var v ClaudeToolReferenceContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "server_tool_use":
 		var v ClaudeServerToolUseContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "web_search_result":
 		var v ClaudeWebSearchResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "web_search_tool_result_error":
 		var v ClaudeWebSearchToolRequestErrorContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "web_search_tool_result":
 		var v ClaudeWebSearchToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "web_fetch_tool_result_error":
 		var v ClaudeWebFetchToolResultErrorContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "web_fetch_result":
 		var v ClaudeWebFetchResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "web_fetch_tool_result":
 		var v ClaudeWebFetchToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "code_execution_tool_result_error":
 		var v ClaudeCodeExecutionToolResultErrorContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "code_execution_output":
 		var v ClaudeCodeExecutionOutputContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "code_execution_result":
 		var v ClaudeCodeExecutionResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "encrypted_code_execution_result":
 		var v ClaudeEncryptedCodeExecutionResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "code_execution_tool_result":
 		var v ClaudeCodeExecutionToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
+	default:
+		return nil, false, nil
+	}
+}
+
+func decodeClaudeContentFromMapExtended(typeName string, m map[string]any) (ClaudeContent, bool, error) {
+	switch typeName {
 	case "bash_code_execution_tool_result_error":
 		var v ClaudeBashCodeExecutionToolResultErrorContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "bash_code_execution_output":
 		var v ClaudeBashCodeExecutionOutputContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "bash_code_execution_result":
 		var v ClaudeBashCodeExecutionResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "bash_code_execution_tool_result":
 		var v ClaudeBashCodeExecutionToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "text_editor_code_execution_tool_result_error":
 		var v ClaudeTextEditorCodeExecutionResultErrorContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "text_editor_code_execution_view_result":
 		var v ClaudeTextEditorCodeExecutionViewResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "text_editor_code_execution_create_result":
 		var v ClaudeTextEditorCodeExecutionCreateResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "text_editor_code_execution_str_replace_result":
 		var v ClaudeTextEditorCodeExecutionStrReplaceResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "text_editor_code_execution_tool_result":
 		var v ClaudeTextEditorCodeExecutionToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "tool_search_tool_result_error":
 		var v ClaudeToolSearchToolResultErrorContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "tool_search_tool_search_result":
 		var v ClaudeToolSearchToolSearchResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "tool_search_tool_result":
 		var v ClaudeToolSearchToolResultContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	case "container_upload":
 		var v ClaudeContainerUploadContent
-		return &v, v.FromMap(m)
+		return &v, true, v.FromMap(m)
 	default:
-		return nil, fmt.Errorf("unsupported claude content type: %q", typeName)
+		return nil, false, nil
 	}
 }
 
@@ -3846,111 +3863,128 @@ func decodeClaudeContent(raw json.RawMessage) (ClaudeContent, error) {
 	if err := json.Unmarshal(trimmed, &base); err != nil {
 		return nil, err
 	}
-	switch base.Type {
+	if content, matched, err := decodeClaudeContentCore(base.Type, trimmed); matched {
+		return content, err
+	}
+	if content, matched, err := decodeClaudeContentExtended(base.Type, trimmed); matched {
+		return content, err
+	}
+	return nil, fmt.Errorf("unsupported claude content type: %q", base.Type)
+}
+
+func decodeClaudeContentCore(typeName string, raw []byte) (ClaudeContent, bool, error) {
+	switch typeName {
 	case "text":
 		var v ClaudeTextContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "image":
 		var v ClaudeImageContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "document":
 		var v ClaudeDocumentContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "search_result":
 		var v ClaudeSearchResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "thinking":
 		var v ClaudeThinkingContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "redacted_thinking":
 		var v ClaudeRedactedThinkingContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "tool_use":
 		var v ClaudeToolUseContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "tool_result":
 		var v ClaudeToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "tool_reference":
 		var v ClaudeToolReferenceContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "server_tool_use":
 		var v ClaudeServerToolUseContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "web_search_result":
 		var v ClaudeWebSearchResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "web_search_tool_result_error":
 		var v ClaudeWebSearchToolRequestErrorContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "web_search_tool_result":
 		var v ClaudeWebSearchToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "web_fetch_tool_result_error":
 		var v ClaudeWebFetchToolResultErrorContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "web_fetch_result":
 		var v ClaudeWebFetchResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "web_fetch_tool_result":
 		var v ClaudeWebFetchToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "code_execution_tool_result_error":
 		var v ClaudeCodeExecutionToolResultErrorContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "code_execution_output":
 		var v ClaudeCodeExecutionOutputContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "code_execution_result":
 		var v ClaudeCodeExecutionResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "encrypted_code_execution_result":
 		var v ClaudeEncryptedCodeExecutionResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "code_execution_tool_result":
 		var v ClaudeCodeExecutionToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
+	default:
+		return nil, false, nil
+	}
+}
+
+func decodeClaudeContentExtended(typeName string, raw []byte) (ClaudeContent, bool, error) {
+	switch typeName {
 	case "bash_code_execution_tool_result_error":
 		var v ClaudeBashCodeExecutionToolResultErrorContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "bash_code_execution_output":
 		var v ClaudeBashCodeExecutionOutputContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "bash_code_execution_result":
 		var v ClaudeBashCodeExecutionResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "bash_code_execution_tool_result":
 		var v ClaudeBashCodeExecutionToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "text_editor_code_execution_tool_result_error":
 		var v ClaudeTextEditorCodeExecutionResultErrorContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "text_editor_code_execution_view_result":
 		var v ClaudeTextEditorCodeExecutionViewResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "text_editor_code_execution_create_result":
 		var v ClaudeTextEditorCodeExecutionCreateResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "text_editor_code_execution_str_replace_result":
 		var v ClaudeTextEditorCodeExecutionStrReplaceResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "text_editor_code_execution_tool_result":
 		var v ClaudeTextEditorCodeExecutionToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "tool_search_tool_result_error":
 		var v ClaudeToolSearchToolResultErrorContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "tool_search_tool_search_result":
 		var v ClaudeToolSearchToolSearchResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "tool_search_tool_result":
 		var v ClaudeToolSearchToolResultContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	case "container_upload":
 		var v ClaudeContainerUploadContent
-		return &v, json.Unmarshal(trimmed, &v)
+		return &v, true, json.Unmarshal(raw, &v)
 	default:
-		return nil, fmt.Errorf("unsupported claude content type: %q", base.Type)
+		return nil, false, nil
 	}
 }
 

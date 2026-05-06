@@ -54,6 +54,16 @@ func (r *OpenAIChatCompletionsRequest) GetPrompt() string {
 }
 
 func (r *OpenAIChatCompletionsRequest) FromMap(m map[string]any) error {
+	if err := r.fromMapPart1(m); err != nil {
+		return err
+	}
+	if err := r.fromMapPart2(m); err != nil {
+		return err
+	}
+	return r.fromMapPart3(m)
+}
+
+func (r *OpenAIChatCompletionsRequest) fromMapPart1(m map[string]any) error {
 	var err error
 	r.Model, err = stringValue(m, "model")
 	if err != nil {
@@ -108,9 +118,11 @@ func (r *OpenAIChatCompletionsRequest) FromMap(m map[string]any) error {
 		return err
 	}
 	r.ParallelToolCalls, err = boolPtrValue(m, "parallel_tool_calls")
-	if err != nil {
-		return err
-	}
+	return err
+}
+
+func (r *OpenAIChatCompletionsRequest) fromMapPart2(m map[string]any) error {
+	var err error
 	r.Prediction, err = decodeOpenAIChatPredictionPtrFromMapField(m, "prediction")
 	if err != nil {
 		return err
@@ -152,9 +164,11 @@ func (r *OpenAIChatCompletionsRequest) FromMap(m map[string]any) error {
 		return err
 	}
 	r.Store, err = boolPtrValue(m, "store")
-	if err != nil {
-		return err
-	}
+	return err
+}
+
+func (r *OpenAIChatCompletionsRequest) fromMapPart3(m map[string]any) error {
+	var err error
 	r.Stream, err = boolValue(m, "stream")
 	if err != nil {
 		return err
@@ -197,17 +211,30 @@ func (r *OpenAIChatCompletionsRequest) FromMap(m map[string]any) error {
 
 func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	out := map[string]any{"model": r.Model}
+	if err := r.toMapPart1(out); err != nil {
+		return nil, err
+	}
+	if err := r.toMapPart2(out); err != nil {
+		return nil, err
+	}
+	if err := r.toMapPart3(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *OpenAIChatCompletionsRequest) toMapPart1(out map[string]any) error {
 	if len(r.Messages) > 0 {
 		messages, err := openAIChatMessageListToMaps(r.Messages)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["messages"] = messages
 	}
 	if r.Audio != nil {
 		audio, err := r.Audio.ToMap()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["audio"] = audio
 	}
@@ -217,14 +244,14 @@ func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	if r.FunctionCall != nil {
 		functionCall, err := r.FunctionCall.ToAny()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["function_call"] = functionCall
 	}
 	if len(r.Functions) > 0 {
 		functions, err := openAIFunctionDefinitionListToMaps(r.Functions)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["functions"] = functions
 	}
@@ -252,10 +279,14 @@ func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	if r.ParallelToolCalls != nil {
 		out["parallel_tool_calls"] = *r.ParallelToolCalls
 	}
+	return nil
+}
+
+func (r *OpenAIChatCompletionsRequest) toMapPart2(out map[string]any) error {
 	if r.Prediction != nil {
 		prediction, err := r.Prediction.ToMap()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["prediction"] = prediction
 	}
@@ -268,7 +299,7 @@ func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	if r.ResponseFormat != nil {
 		responseFormat, err := r.ResponseFormat.ToMap()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["response_format"] = responseFormat
 	}
@@ -280,18 +311,22 @@ func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	if r.Stop != nil {
 		stop, err := r.Stop.ToAny()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["stop"] = stop
 	}
 	if r.Store != nil {
 		out["store"] = *r.Store
 	}
+	return nil
+}
+
+func (r *OpenAIChatCompletionsRequest) toMapPart3(out map[string]any) error {
 	setMapBool(out, "stream", r.Stream)
 	if r.StreamOptions != nil {
 		streamOptions, err := r.StreamOptions.ToMap()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["stream_options"] = streamOptions
 	}
@@ -301,14 +336,14 @@ func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	if r.ToolChoice != nil {
 		toolChoice, err := r.ToolChoice.ToAny()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["tool_choice"] = toolChoice
 	}
 	if len(r.Tools) > 0 {
 		tools, err := openAIChatToolListToMaps(r.Tools)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["tools"] = tools
 	}
@@ -321,11 +356,11 @@ func (r *OpenAIChatCompletionsRequest) ToMap() (map[string]any, error) {
 	if r.WebSearchOptions != nil {
 		webSearchOptions, err := r.WebSearchOptions.ToMap()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out["web_search_options"] = webSearchOptions
 	}
-	return out, nil
+	return nil
 }
 
 type OpenAIChatMessage struct {
