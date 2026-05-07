@@ -148,6 +148,12 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONRenameStmt(s, t)
 		},
+		"json_wrap_input_text": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONWrapInputTextStmt(s, t)
+		},
 		"req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
@@ -314,6 +320,29 @@ func parseJSONRenameStmt(s *scanner, t *RequestTransform) error {
 		Op:       jsonOpRename,
 		FromPath: strings.TrimSpace(from),
 		ToPath:   strings.TrimSpace(to),
+	})
+	return nil
+}
+
+func parseJSONWrapInputTextStmt(s *scanner, t *RequestTransform) error {
+	// json_wrap_input_text <jsonpath>;
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(pathTok, "json_wrap_input_text expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	if err := consumeSemicolon(s, "json_wrap_input_text"); err != nil {
+		return err
+	}
+	t.JSONOps = append(t.JSONOps, JSONOp{
+		Op:   jsonOpWrapInputText,
+		Path: strings.TrimSpace(path),
 	})
 	return nil
 }

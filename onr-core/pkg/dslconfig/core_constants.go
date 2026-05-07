@@ -7,8 +7,9 @@ const (
 	exprRequestModel     = "$request.model"
 	exprRequestMapped    = "$request.model_mapped"
 
-	jsonOpSet         = "json_set"
-	jsonOpSetIfAbsent = "json_set_if_absent"
-	jsonOpDel         = "json_del"
-	jsonOpRename      = "json_rename"
+	jsonOpSet           = "json_set"
+	jsonOpSetIfAbsent   = "json_set_if_absent"
+	jsonOpDel           = "json_del"
+	jsonOpRename        = "json_rename"
+	jsonOpWrapInputText = "json_wrap_input_text"
 )

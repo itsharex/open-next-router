@@ -329,7 +329,7 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_set_if_absent / json_del / json_rename (multiple allowed)
+#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text (multiple allowed)
 
 ```conf
 request {
@@ -337,6 +337,7 @@ request {
   json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
+  json_wrap_input_text "$.input";
   json_del "$.tools";
 }
 ```
@@ -345,6 +346,7 @@ request {
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
 - `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
+- `json_wrap_input_text` wraps a string value as an OpenAI Responses `input` message list. Missing paths and already-array values are no-op; other types are rejected.
 
 #### req_map
 
@@ -1319,6 +1321,54 @@ Multiple: yes
 
 - Renames a JSON field on the upstream request payload.
 - JSONPath is limited to object paths: `$.a.b.c`.
+
+#### json_wrap_input_text
+
+```text
+Syntax:  json_wrap_input_text <jsonpath>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Wraps a string value at `<jsonpath>` as an OpenAI Responses `input` message list.
+- Missing paths are no-op. Values that are already arrays are no-op to avoid double wrapping.
+- Object, number, boolean, and `null` values are rejected.
+- JSONPath is limited to object paths: `$.a.b.c`.
+
+Example:
+
+```conf
+request {
+  json_wrap_input_text "$.input";
+}
+```
+
+Input:
+
+```json
+{
+  "input": "Generate an image of gray tabby cat hugging an otter with an orange scarf"
+}
+```
+
+Output:
+
+```json
+{
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Generate an image of gray tabby cat hugging an otter with an orange scarf"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ### 7.6 upstream
 

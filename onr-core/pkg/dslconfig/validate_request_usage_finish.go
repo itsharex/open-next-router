@@ -19,6 +19,10 @@ func validateProviderRequestTransform(path, providerName string, req ProviderReq
 }
 
 func validateRequestTransform(path, providerName, scope string, t RequestTransform) error {
+	if err := validateRequestJSONOps(path, providerName, scope, t.JSONOps); err != nil {
+		return err
+	}
+
 	mode := strings.ToLower(strings.TrimSpace(t.ReqMapMode))
 	if mode == "" {
 		return nil
@@ -41,6 +45,28 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 			"req_map",
 		)
 	}
+}
+
+func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) error {
+	for i, op := range ops {
+		opScope := fmt.Sprintf("%s.json_op[%d]", scope, i)
+		switch strings.ToLower(strings.TrimSpace(op.Op)) {
+		case jsonOpSet, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+		case jsonOpRename:
+			if _, err := parseObjectPath(op.FromPath); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid from path: %w", providerName, path, opScope, err)
+			}
+			if _, err := parseObjectPath(op.ToPath); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid to path: %w", providerName, path, opScope, err)
+			}
+		default:
+			return fmt.Errorf("provider %q in %q: %s unsupported json op %q", providerName, path, opScope, op.Op)
+		}
+	}
+	return nil
 }
 
 func validateProviderUsage(path, providerName string, usage ProviderUsage, registry usageModeRegistry) (ProviderUsage, error) {

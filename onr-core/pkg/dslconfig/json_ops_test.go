@@ -56,6 +56,52 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			want: map[string]any{"a": map[string]any{}, "x": map[string]any{"y": 2}},
 		},
 		{
+			name: "json_wrap_input_text_wraps_string",
+			in: map[string]any{
+				"input": "Generate an image of gray tabby cat hugging an otter with an orange scarf",
+			},
+			ops: []JSONOp{{Op: "json_wrap_input_text", Path: "$.input"}},
+			want: map[string]any{
+				"input": []any{
+					map[string]any{
+						"role": "user",
+						"content": []any{
+							map[string]any{
+								"type": "input_text",
+								"text": "Generate an image of gray tabby cat hugging an otter with an orange scarf",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "json_wrap_input_text_missing_path_is_noop",
+			in:   map[string]any{"model": "gpt-image-1"},
+			ops:  []JSONOp{{Op: "json_wrap_input_text", Path: "$.input"}},
+			want: map[string]any{"model": "gpt-image-1"},
+		},
+		{
+			name: "json_wrap_input_text_array_is_noop",
+			in: map[string]any{
+				"input": []any{
+					map[string]any{"role": "user", "content": "already wrapped"},
+				},
+			},
+			ops: []JSONOp{{Op: "json_wrap_input_text", Path: "$.input"}},
+			want: map[string]any{
+				"input": []any{
+					map[string]any{"role": "user", "content": "already wrapped"},
+				},
+			},
+		},
+		{
+			name:    "json_wrap_input_text_rejects_object",
+			in:      map[string]any{"input": map[string]any{"text": "bad"}},
+			ops:     []JSONOp{{Op: "json_wrap_input_text", Path: "$.input"}},
+			wantErr: true,
+		},
+		{
 			name:    "invalid_path_prefix",
 			in:      map[string]any{"a": 1},
 			ops:     []JSONOp{{Op: "json_set", Path: "a.b", ValueExpr: "true"}},

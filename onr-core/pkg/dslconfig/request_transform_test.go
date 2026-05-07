@@ -1,6 +1,7 @@
 package dslconfig
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -133,5 +134,60 @@ provider "t" {
 	}
 	if op.ValueExpr != "\"\"" {
 		t.Fatalf("unexpected value expr: %q", op.ValueExpr)
+	}
+}
+
+func TestRequestJSONWrapInputText_Parsed(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_wrap_input_text "$.input";
+    }
+  }
+}
+`
+	routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderConfig("t.conf", conf)
+	if err != nil {
+		t.Fatalf("parseProviderConfig: %v", err)
+	}
+	_ = routing
+	_ = headers
+	_ = response
+	_ = perr
+	_ = usage
+	_ = finish
+	_ = balance
+	_ = models
+	if len(req.Defaults.JSONOps) != 1 {
+		t.Fatalf("expected 1 json op, got %d", len(req.Defaults.JSONOps))
+	}
+	op := req.Defaults.JSONOps[0]
+	if op.Op != "json_wrap_input_text" {
+		t.Fatalf("unexpected op: %q", op.Op)
+	}
+	if op.Path != "$.input" {
+		t.Fatalf("unexpected path: %q", op.Path)
+	}
+}
+
+func TestValidateProviderFile_RequestJSONWrapInputTextRejectsInvalidPath(t *testing.T) {
+	path := writeProviderFile(t, "t.conf", `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    upstream_config { base_url = "https://t.example.com"; }
+    request {
+      json_wrap_input_text "$.input[0]";
+    }
+  }
+}
+`)
+	_, err := ValidateProviderFile(path)
+	if err == nil || !strings.Contains(err.Error(), "array indexes") {
+		t.Fatalf("ValidateProviderFile err=%v, want array index validation error", err)
 	}
 }

@@ -339,7 +339,7 @@ request {
 - 当没有任何 `model_map <from> ...;` 命中时，使用该默认表达式作为 `$request.model_mapped`
 - 如未配置该指令：`$request.model_mapped` 默认等于 `$request.model`
 
-#### json_set / json_set_if_absent / json_del / json_rename（可多条）
+#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text（可多条）
 
 ```conf
 request {
@@ -347,6 +347,7 @@ request {
   json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
+  json_wrap_input_text "$.input";
   json_del "$.tools";
 }
 ```
@@ -357,6 +358,7 @@ request {
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
 - `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量/concat
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
+- `json_wrap_input_text`：当路径值是字符串时，将其包装成 OpenAI Responses `input` message 列表；路径不存在或值已经是数组时为 no-op，其他类型会报错
 
 #### req_map
 
@@ -1351,6 +1353,54 @@ Multiple: yes
 
 - 将字段从 `<from-jsonpath>` 移动到 `<to-jsonpath>`；源字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
+
+#### json_wrap_input_text
+
+```text
+Syntax:  json_wrap_input_text <jsonpath>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- 将 `<jsonpath>` 指向的字符串值包装成 OpenAI Responses `input` message 列表。
+- 路径不存在时为 no-op；路径值已经是数组时为 no-op，避免二次包装。
+- 路径值为对象、数字、布尔值或 `null` 时会报错，避免把异常请求静默转发给上游。
+- JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
+
+示例：
+
+```conf
+request {
+  json_wrap_input_text "$.input";
+}
+```
+
+输入：
+
+```json
+{
+  "input": "Generate an image of gray tabby cat hugging an otter with an orange scarf"
+}
+```
+
+输出：
+
+```json
+{
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Generate an image of gray tabby cat hugging an otter with an orange scarf"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ### 7.6 upstream（路由）
 

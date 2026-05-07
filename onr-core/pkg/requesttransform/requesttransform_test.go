@@ -90,6 +90,53 @@ func TestApply_MultipartPreservesOriginalBody(t *testing.T) {
 	}
 }
 
+func TestApply_JSONWrapInputTextMarshalsBody(t *testing.T) {
+	t.Parallel()
+
+	const prompt = "Generate an image of gray tabby cat hugging an otter with an orange scarf"
+	body := []byte(`{"model":"gpt-image-1","input":"` + prompt + `"}`)
+	value := map[string]any{
+		"model": "gpt-image-1",
+		"input": prompt,
+	}
+
+	result, err := Apply(&dslmeta.Meta{}, "application/json", body, value, &dslconfig.RequestTransform{
+		JSONOps: []dslconfig.JSONOp{
+			{Op: "json_wrap_input_text", Path: "$.input"},
+		},
+	}, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(result.Body, &root); err != nil {
+		t.Fatalf("unmarshal transformed body: %v", err)
+	}
+	input, ok := root["input"].([]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("input=%T %#v, want one message", root["input"], root["input"])
+	}
+	message, ok := input[0].(map[string]any)
+	if !ok || message["role"] != "user" {
+		t.Fatalf("message=%#v", input[0])
+	}
+	content, ok := message["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("content=%#v", message["content"])
+	}
+	block, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("block=%#v", content[0])
+	}
+	if got, want := block["type"], "input_text"; got != want {
+		t.Fatalf("type=%v want=%v", got, want)
+	}
+	if got, want := block["text"], prompt; got != want {
+		t.Fatalf("text=%v want=%v", got, want)
+	}
+}
+
 //gocyclo:ignore
 func TestApplyReqMap_OpenAIChatToAnthropicMessages_UsesTypedAnthropicConversion(t *testing.T) {
 	t.Parallel()

@@ -52,6 +52,12 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 				return nil, err
 			}
 			_ = opChanged
+		case jsonOpWrapInputText:
+			opChanged, err := jsonWrapInputText(obj, op.Path)
+			if err != nil {
+				return nil, err
+			}
+			_ = opChanged
 		default:
 			return nil, fmt.Errorf("unsupported json op %q", op.Op)
 		}
@@ -229,6 +235,51 @@ func jsonRename(root map[string]any, fromPath string, toPath string) (bool, erro
 		cur[last] = val
 	}
 	return true, nil
+}
+
+func jsonWrapInputText(root map[string]any, path string) (bool, error) {
+	parts, err := parseObjectPath(path)
+	if err != nil {
+		return false, err
+	}
+	if len(parts) == 0 {
+		return false, nil
+	}
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		next, ok := cur[parts[i]]
+		if !ok {
+			return false, nil
+		}
+		m, ok := next.(map[string]any)
+		if !ok {
+			return false, nil
+		}
+		cur = m
+	}
+	last := parts[len(parts)-1]
+	val, ok := cur[last]
+	if !ok {
+		return false, nil
+	}
+	if text, ok := val.(string); ok {
+		cur[last] = []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{
+						"type": "input_text",
+						"text": text,
+					},
+				},
+			},
+		}
+		return true, nil
+	}
+	if val != nil && reflect.TypeOf(val).Kind() == reflect.Slice {
+		return false, nil
+	}
+	return false, fmt.Errorf("json_wrap_input_text %s expects string or array, got %T", path, val)
 }
 
 func parseObjectPath(path string) ([]string, error) {
