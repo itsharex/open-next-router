@@ -127,6 +127,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "json_set_if_absent", Block: "request", Hover: "`json_set_if_absent <jsonpath> <expr>;`\n\nSets JSON field only when target field is absent."},
 	{Name: "json_del", Block: "request", Hover: "`json_del <jsonpath>;`\n\nDeletes one request JSON field."},
 	{Name: "json_rename", Block: "request", Hover: "`json_rename <from-jsonpath> <to-jsonpath>;`\n\nRenames/moves one request JSON field."},
+	{Name: "json_wrap_input_text", Block: "request", Hover: "`json_wrap_input_text <jsonpath>;`\n\nWraps a string field as an OpenAI Responses `input` message list. Missing paths and already-array values are left unchanged."},
 	{Name: "req_map", Block: "request", Hover: "`req_map <mode>;`\n\nMap request JSON between API schemas.", Modes: []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"}},
 
 	{Name: "resp_passthrough", Block: "response", Hover: "`resp_passthrough;`\n\nPasses upstream response through without schema mapping."},

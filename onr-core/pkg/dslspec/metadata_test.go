@@ -66,6 +66,7 @@ func TestDirectivesByBlock(t *testing.T) {
 	request := DirectivesByBlock("request")
 	foundPassHeader := false
 	foundFilterHeaderValues := false
+	foundWrapInputText := false
 	for _, d := range request {
 		if d == "pass_header" {
 			foundPassHeader = true
@@ -73,12 +74,18 @@ func TestDirectivesByBlock(t *testing.T) {
 		if d == "filter_header_values" {
 			foundFilterHeaderValues = true
 		}
+		if d == "json_wrap_input_text" {
+			foundWrapInputText = true
+		}
 	}
 	if !foundPassHeader {
 		t.Fatalf("expected pass_header in request block directives")
 	}
 	if !foundFilterHeaderValues {
 		t.Fatalf("expected filter_header_values in request block directives")
+	}
+	if !foundWrapInputText {
+		t.Fatalf("expected json_wrap_input_text in request block directives")
 	}
 
 	usageMode := DirectivesByBlock("usage_mode")
