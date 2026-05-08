@@ -2,6 +2,7 @@ package dslconfig
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -425,7 +426,8 @@ func jsonDelWithCondition(root map[string]any, path string, fieldName string, pa
 		delete(parent, key)
 		return true, nil
 	default:
-		return false, fmt.Errorf("json_del_with_condition %s expects object or array, got %T", path, val)
+		slog.Debug("json_del_with_condition ignored non-object value", "path", path, "type", fmt.Sprintf("%T", val))
+		return false, nil
 	}
 }
 

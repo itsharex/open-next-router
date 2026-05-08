@@ -155,6 +155,12 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			want: map[string]any{},
 		},
 		{
+			name: "json_del_with_condition_ignores_scalar",
+			in:   map[string]any{"tool_choice": "auto"},
+			ops:  []JSONOp{{Op: "json_del_with_condition", Path: "$.tool_choice", FieldName: "type", Patterns: []string{"web_search*", "web_fetch*"}}},
+			want: map[string]any{"tool_choice": "auto"},
+		},
+		{
 			name:    "json_wrap_input_text_rejects_object",
 			in:      map[string]any{"input": map[string]any{"text": "bad"}},
 			ops:     []JSONOp{{Op: "json_wrap_input_text", Path: "$.input"}},
