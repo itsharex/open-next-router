@@ -654,6 +654,11 @@ metrics {
   usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
   usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens" fallback=true;
   usage_fact cache_read token path="$.usage.cached_tokens" fallback=true;
+
+  # 可选：仅当上游真实返回分模态 cached token 时配置。
+  usage_fact cache_read token path="$.usage.cache_details.text.cached_tokens" attr.modality="text";
+  usage_fact cache_read token path="$.usage.cache_details.image.cached_tokens" attr.modality="image";
+  usage_fact cache_read token path="$.usage.cache_details.audio.cached_tokens" attr.modality="audio";
 }
 ```
 
@@ -685,6 +690,12 @@ metrics {
   usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
   usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
+  # 可选：仅当上游真实返回分模态 cached token 时配置。
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="IMAGE")].tokenCount' attr.modality="image";
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="AUDIO")].tokenCount' attr.modality="audio";
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="VIDEO")].tokenCount' attr.modality="video";
+
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
 }
@@ -694,7 +705,8 @@ metrics {
 
 - `gemini`：当前默认预设行为已经可以用 `custom` 配置完整平替；`input token` 通常优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
 - `anthropic`：ONR 现在将 `input` 视为包含 cache 的有效输入总量，因此 `cache_read_input_tokens` 与 `cache_creation_input_tokens` 也应并入 `input`
-- `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
+- `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 以及分模态 cache 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
+- 分模态 cache 复用现有 `cache_read token` 维度，并通过 `attr.modality="text|image|audio|video"` 标识真实模态。只有当上游明确返回分模态 cached token 时才应配置这些字段；不要把一个总 cached token 字段按比例拆分后上报为分模态事实。
 - `gemini` 的输出 token 会把 `candidatesTokenCount` 与 `thoughtsTokenCount` 一并计入 `output`；这里既可以像示例一样写多条同维度 `usage_fact` 让系统自动求和，也可以直接写成 `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`
 - `total_tokens` 默认会由 `input + output` 自动聚合；通常不建议再显式配置 `total_tokens_expr`，避免引入多个事实源
 - 当前 Gemini 原生 usage 字段按驼峰命名处理：`usageMetadata.promptTokenCount` / `candidatesTokenCount` / `thoughtsTokenCount` / `totalTokenCount`
@@ -802,6 +814,7 @@ metrics {
   usage_fact input token path="$.usage.input_tokens";
   usage_fact output token path="$.usage.output_tokens";
   usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+  usage_fact cache_read token path="$.usage.cache_details.image_cached_tokens" attr.modality="image";
 
   usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
   usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
@@ -816,6 +829,7 @@ metrics {
 - `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`
 - `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容“有时有 event、有时没有 event”的上游
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
+- `attr.modality="text|image|audio|video"` 可用于 `cache_read token`，表示上游真实返回的分模态 cached token。Relay 会用它生成 `openai_cache` / `gemini_cache` 这类 provider cache detail 字段。
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
 - `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
@@ -1552,7 +1566,8 @@ Multiple: yes
 - `count_path` 可搭配 `type` / `status` 过滤。
 - `path` / `sum_path` / `expr` 中的 JSONPath 现在支持受限 filter 子集：
   - `$.items[?(@.field=="VALUE")].x`
-- 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"`。
+- 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"` / `attr.modality="image"`。
+- `attr.modality` 对 `cache_read token` 有特殊含义，用于表达上游真实返回的分模态 cached token。支持值为 `text` / `image` / `audio` / `video`；OpenAI cache detail 使用 text/image/audio，Gemini cache detail 使用 text/image/audio/video。
 - 同一 `dimension + unit` 可以出现多条规则；所有命中的非 fallback 规则会累计求和。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
 - `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。

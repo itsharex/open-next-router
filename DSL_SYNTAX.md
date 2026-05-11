@@ -622,6 +622,11 @@ metrics {
   usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
   usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens" fallback=true;
   usage_fact cache_read token path="$.usage.cached_tokens" fallback=true;
+
+  # Optional: only when the upstream reports real per-modality cached tokens.
+  usage_fact cache_read token path="$.usage.cache_details.text.cached_tokens" attr.modality="text";
+  usage_fact cache_read token path="$.usage.cache_details.image.cached_tokens" attr.modality="image";
+  usage_fact cache_read token path="$.usage.cache_details.audio.cached_tokens" attr.modality="audio";
 }
 ```
 
@@ -653,6 +658,12 @@ metrics {
   usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
   usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
+  # Optional: only when the upstream reports real per-modality cached tokens.
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="IMAGE")].tokenCount' attr.modality="image";
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="AUDIO")].tokenCount' attr.modality="audio";
+  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="VIDEO")].tokenCount' attr.modality="video";
+
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
 }
@@ -662,7 +673,8 @@ Notes:
 
 - `gemini`: the current default preset behavior can be fully replaced by `custom` configuration; `input token` usually prefers the `TEXT` modality and falls back to `promptTokenCount`, while multimodal details can be emitted as `image.input/audio.input/video.input token` facts.
 - `anthropic`: ONR now treats `input` as the effective input size, so `cache_read_input_tokens` and `cache_creation_input_tokens` should also be included in `input`.
-- `openai`: the example above only covers core token/cache extraction. Image/audio/tool supplemental facts still need extra explicit `usage_fact` rules in a custom-first setup.
+- `openai`: the example above covers core token/cache extraction. Image/audio/tool supplemental facts and per-modality cache facts still need extra explicit `usage_fact` rules in a custom-first setup.
+- Per-modality cache facts use the existing `cache_read token` dimension with `attr.modality="text|image|audio|video"`. Only configure these fields when the upstream reports real per-modality cached token counts; do not derive them by splitting a total cached token field.
 - Gemini output tokens intentionally include both `candidatesTokenCount` and `thoughtsTokenCount`; you can express that either by multiple same-dimension `usage_fact` rules that sum together, or more explicitly with `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`.
 - `total_tokens` is derived from `input + output` by default; in most cases you should avoid setting `total_tokens_expr` explicitly, because that introduces a second total fact source.
 - Gemini native usage fields are handled in camelCase: `usageMetadata.promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`, and `totalTokenCount`.
@@ -756,6 +768,7 @@ metrics {
   usage_fact input token path="$.usage.input_tokens";
   usage_fact output token path="$.usage.output_tokens";
   usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+  usage_fact cache_read token path="$.usage.cache_details.image_cached_tokens" attr.modality="image";
 
   usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
   usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
@@ -771,6 +784,7 @@ metrics {
 - `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start` or `message_delta`.
 - `event_optional=true` may be used together with `event="..."` when a provider sometimes omits SSE `event:` names.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
+- `attr.modality="text|image|audio|video"` may be used with `cache_read token` when the upstream reports real per-modality cached token counts. Relay uses this metadata to build provider cache detail fields such as `openai_cache` / `gemini_cache`.
 - Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
 - `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
@@ -1704,7 +1718,8 @@ Multiple: yes
 - The registry is intentionally fixed; arbitrary dimensions are not accepted.
 - Supports `path`, `count_path`, `sum_path`, and `expr`.
 - `count_path` may be combined with `type` / `status`.
-- Constant attributes such as `attr.ttl="5m"` are supported.
+- Constant attributes such as `attr.ttl="5m"` and `attr.modality="image"` are supported.
+- `attr.modality` is meaningful for `cache_read token` when an upstream reports real per-modality cached token counts. Supported values are `text`, `image`, `audio`, and `video`; OpenAI cache detail uses text/image/audio, while Gemini cache detail uses text/image/audio/video.
 - Multiple rules may share the same `dimension + unit`; all matched non-fallback rules are summed.
 - `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
 - `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
