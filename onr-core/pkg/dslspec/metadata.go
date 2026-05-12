@@ -131,6 +131,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "json_set_header_values", Block: "request", Hover: "`json_set_header_values <jsonpath> <Header-Name> [separator=\"<sep>\"];`\n\nSets one request JSON array field from downstream header values."},
 	{Name: "json_filter_values", Block: "request", Hover: "`json_filter_values <jsonpath> <pattern>...;`\n\nFilters one request JSON string array field by allowed values."},
 	{Name: "json_del_with_condition", Block: "request", Hover: "`json_del_with_condition <jsonpath> <field> <pattern>...;`\n\nDeletes an object, or matching objects from an array, when the object's field matches one of the patterns."},
+	{Name: "json_del_if_missing", Block: "request", Hover: "`json_del_if_missing <target-jsonpath> <required-jsonpath>;`\n\nDeletes the target request JSON field when the required JSON path is missing."},
 	{Name: "after_req_map", Block: "request", Hover: "`after_req_map { ... }`\n\nRuns nested request JSON operations after req_map. If no req_map is configured, runs after normal request JSON operations."},
 	{Name: "req_map", Block: "request", Hover: "`req_map <mode>;`\n\nMap request JSON between API schemas.", Modes: []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"}},
 
