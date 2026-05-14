@@ -286,10 +286,11 @@ func stringifyInputContentObject(typeInfo string, t map[string]any, b *strings.B
 		if toolName, ok := t["name"].(string); ok {
 			b.WriteString(toolName + " ")
 		}
-		if input, ok := t["arguments"].(string); ok {
-			b.Write([]byte(input))
-		} else {
-			data, _ := json.Marshal(input)
+		if arguments, ok := t["arguments"].(string); ok {
+			b.Write([]byte(arguments))
+		} else if arguments, ok := t["arguments"]; ok {
+
+			data, _ := json.Marshal(arguments)
 			b.Write(data)
 		}
 
