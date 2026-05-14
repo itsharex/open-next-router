@@ -60,12 +60,12 @@ type tokenEstimateContext struct {
 }
 
 func Estimate(cfg *Config, in Input) Output {
+	u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
 	if cfg == nil || !cfg.IsAPIEnabled(in.API) {
-		u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
+
 		return Output{Usage: u, Stage: stage}
 	}
 
-	u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
 	if u != nil {
 		if !cfg.EstimateWhenMissingOrZero {
 			return Output{Usage: u, Stage: stage}
