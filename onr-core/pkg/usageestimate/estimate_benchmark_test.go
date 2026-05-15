@@ -92,7 +92,7 @@ func benchmarkLegacyEstimate(cfg *Config, in Input) Output {
 		return Output{Usage: nil, Stage: ""}
 	}
 
-	reqText := extractRequestText(in.API, in.RequestBody, cfg.MaxRequestBytes)
+	reqCtx := extractRequestText(in.API, in.RequestBody, cfg.MaxRequestBytes)
 	respText := ""
 	if len(in.StreamTail) > 0 {
 		respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
@@ -100,9 +100,10 @@ func benchmarkLegacyEstimate(cfg *Config, in Input) Output {
 		respText = extractResponseText(in.API, in.ResponseBody, cfg.MaxResponseBytes)
 	}
 
+	respCtx := &tokenEstimateContext{text: respText}
 	est := &dslconfig.Usage{
-		InputTokens:  EstimateTokenByModel(in.Model, reqText),
-		OutputTokens: EstimateTokenByModel(in.Model, respText),
+		InputTokens:  EstimateTokenByModel(in.Model, reqCtx),
+		OutputTokens: EstimateTokenByModel(in.Model, respCtx),
 	}
 	est.TotalTokens = est.InputTokens + est.OutputTokens
 

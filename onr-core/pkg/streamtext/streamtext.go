@@ -11,6 +11,17 @@ type deltaTextEnvelope struct {
 		Delta struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
+			ToolCalls        []struct {
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments any    `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+			FunctionCall struct {
+				Name      string `json:"name"`
+				Arguments any    `json:"arguments"`
+			} `json:"function_call"`
 		} `json:"delta"`
 		Text string `json:"text"`
 	} `json:"choices"`
@@ -89,11 +100,44 @@ func extractOpenAIDeltaText(payload []byte) string {
 		if c.Delta.ReasoningContent != "" {
 			b.WriteString(c.Delta.ReasoningContent)
 		}
+		for _, toolCall := range c.Delta.ToolCalls {
+			if arguments := jsonValueString(toolCall.Function.Arguments); arguments != "" {
+				b.WriteString(arguments)
+				continue
+			}
+			if toolCall.Function.Name != "" {
+				b.WriteString(toolCall.Function.Name)
+				continue
+			}
+			if toolCall.ID != "" {
+				b.WriteString(toolCall.ID)
+			}
+		}
+		if arguments := jsonValueString(c.Delta.FunctionCall.Arguments); arguments != "" {
+			b.WriteString(arguments)
+		} else if c.Delta.FunctionCall.Name != "" {
+			b.WriteString(c.Delta.FunctionCall.Name)
+		}
 		if c.Text != "" {
 			b.WriteString(c.Text)
 		}
 	}
 	return b.String()
+}
+
+func jsonValueString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}
 }
 
 func extractOpenAIResponsesDeltaText(payload []byte) string {
@@ -104,6 +148,15 @@ func extractOpenAIResponsesDeltaText(payload []byte) string {
 	if s, ok := obj["delta"].(string); ok && s != "" {
 		return s
 	}
+	// get tool name
+	if typeInfo, ok := obj["type"].(string); ok && !strings.HasSuffix(typeInfo, "done") {
+		if item, ok := obj["item"].(map[string]any); ok {
+			if toolName, ok := item["name"].(string); ok {
+				return toolName
+			}
+		}
+	}
+
 	return ""
 }
 
@@ -112,12 +165,28 @@ func extractAnthropicDeltaText(payload []byte) string {
 	if err := json.Unmarshal(payload, &obj); err != nil || obj == nil {
 		return ""
 	}
-	delta, _ := obj["delta"].(map[string]any)
-	if delta == nil {
-		return ""
+	if delta, ok := obj["delta"].(map[string]any); ok {
+		for _, key := range []string{"text", "partial_json", "thinking"} {
+			if s, ok := delta[key].(string); ok && s != "" {
+				return s
+			}
+		}
 	}
-	if s, ok := delta["text"].(string); ok && s != "" {
-		return s
+	if block, ok := obj["content_block"].(map[string]any); ok {
+		switch block["type"] {
+		case "tool_use", "server_tool_use":
+			var b strings.Builder
+			if name, ok := block["name"].(string); ok && name != "" {
+				b.WriteString(name)
+			}
+			if id, ok := block["id"].(string); ok && id != "" {
+				if b.Len() > 0 {
+					b.WriteByte(' ')
+				}
+				b.WriteString(id)
+			}
+			return b.String()
+		}
 	}
 	return ""
 }

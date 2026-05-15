@@ -32,8 +32,8 @@ func TestExtractRequestText_GeminiContents(t *testing.T) {
 		]
 	}`)
 	got := extractRequestText("gemini.generateContent", req, 1024)
-	if !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
-		t.Fatalf("got=%q", got)
+	if !strings.Contains(got.text, "hello") || !strings.Contains(got.text, "world") {
+		t.Fatalf("got=%q", got.text)
 	}
 }
 
@@ -48,6 +48,43 @@ func TestExtractResponseText_GeminiCandidates(t *testing.T) {
 	got := extractResponseText("gemini.generateContent", resp, 1024)
 	if !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
 		t.Fatalf("got=%q", got)
+	}
+}
+
+func TestOpenAIResponsesReasoningSummaryAvoidsHiddenBlockPad(t *testing.T) {
+	t.Parallel()
+
+	req := map[string]any{
+		"input": []any{
+			map[string]any{
+				"type": "reasoning",
+				"summary": []any{
+					map[string]any{"type": "summary_text", "text": "visible reasoning"},
+				},
+			},
+			map[string]any{
+				"type":    "reasoning",
+				"summary": []any{},
+			},
+		},
+	}
+	ctx := stringfyOpenaiResponsesRequest(req)
+	if !strings.Contains(ctx.text, "visible reasoning") {
+		t.Fatalf("text=%q want visible reasoning", ctx.text)
+	}
+	if got, want := ctx.numThinkingBlockInput, 1; got != want {
+		t.Fatalf("numThinkingBlockInput=%d want=%d", got, want)
+	}
+}
+
+func TestEstimateTokenByModel_CountsHiddenReasoningWithoutText(t *testing.T) {
+	t.Parallel()
+
+	got := EstimateTokenByModel("gpt-5.5", &tokenEstimateContext{
+		numThinkingBlockInput: 2,
+	})
+	if got != 600 {
+		t.Fatalf("tokens=%d want=600", got)
 	}
 }
 

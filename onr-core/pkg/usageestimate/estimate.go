@@ -1,12 +1,9 @@
 package usageestimate
 
 import (
-	"bytes"
-	"encoding/json"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/streamtext"
 )
 
 const (
@@ -18,7 +15,12 @@ const (
 
 const (
 	apiChatCompletions = "chat.completions"
+	apiEmbeddings      = "embeddings"
 	apiResponses       = "responses"
+	apiMessages        = "claude.messages"
+
+	apiGeminiGenerateContent       = "gemini.generatecontent"
+	apiGeminiStreamGenerateContent = "gemini.streamgeneratecontent"
 )
 
 type Input struct {
@@ -46,13 +48,26 @@ type parsedRequestBody struct {
 	err  error
 }
 
+type tokenEstimateContext struct {
+	text                     string
+	completion               bool // is output
+	numTools                 int  // number of tool definitions
+	numThinkingBlockInput    int
+	numThinkingBlockOutput   int
+	numMessages              int
+	numFunctionCalls         int
+	numFunctionCallOutputs   int
+	numCustomToolCalls       int
+	numCustomToolCallOutputs int
+}
+
 func Estimate(cfg *Config, in Input) Output {
+	u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
 	if cfg == nil || !cfg.IsAPIEnabled(in.API) {
-		u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
+
 		return Output{Usage: u, Stage: stage}
 	}
 
-	u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
 	if u != nil {
 		if !cfg.EstimateWhenMissingOrZero {
 			return Output{Usage: u, Stage: stage}
@@ -74,22 +89,23 @@ func Estimate(cfg *Config, in Input) Output {
 	}
 
 	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqText := extractRequestTextFromParsed(in.API, reqParsed)
+	reqCtx := extractRequestTextFromParsed(in.API, reqParsed)
 	respText := ""
 	if len(in.StreamTail) > 0 {
 		respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
 	} else {
-		respText = extractResponseText(in.API, in.ResponseBody, cfg.MaxResponseBytes)
+		respText = extractResponseTextForModel(in.API, in.Model, in.ResponseBody, cfg.MaxResponseBytes)
 	}
 
+	respCtx := &tokenEstimateContext{text: respText, completion: true, numTools: 0}
 	est := &dslconfig.Usage{
-		InputTokens:  EstimateTokenByModel(in.Model, reqText),
-		OutputTokens: EstimateTokenByModel(in.Model, respText),
+		InputTokens:  EstimateTokenByModel(in.Model, reqCtx),
+		OutputTokens: EstimateTokenByModel(in.Model, respCtx),
 	}
 	est.TotalTokens = est.InputTokens + est.OutputTokens
 
 	// Best-effort overhead for OpenAI-style chat messages.
-	if strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
+	if normalizeAPI(in.API) == apiChatCompletions {
 		msgCount := countMessagesFromParsed(reqParsed)
 		if msgCount > 0 {
 			est.InputTokens += msgCount*3 + 3
@@ -111,20 +127,21 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 	}
 
 	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqText := ""
+	reqCtx := &tokenEstimateContext{}
 	if needPrompt {
-		reqText = extractRequestTextFromParsed(in.API, reqParsed)
-		if strings.TrimSpace(reqText) == "" {
+		reqCtx = extractRequestTextFromParsed(in.API, reqParsed)
+		if strings.TrimSpace(reqCtx.text) == "" {
 			needPrompt = false
 		}
 	}
 
-	respText := ""
+	respCtx := &tokenEstimateContext{}
+	var respText string
 	if needCompletion {
 		if len(in.StreamTail) > 0 {
 			respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
 		} else {
-			respText = extractResponseText(in.API, in.ResponseBody, cfg.MaxResponseBytes)
+			respText = extractResponseTextForModel(in.API, in.Model, in.ResponseBody, cfg.MaxResponseBytes)
 		}
 		if strings.TrimSpace(respText) == "" {
 			needCompletion = false
@@ -137,15 +154,16 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 
 	out := *u
 	if needPrompt {
-		out.InputTokens = EstimateTokenByModel(in.Model, reqText)
+		out.InputTokens = EstimateTokenByModel(in.Model, reqCtx)
 	}
 	if needCompletion {
-		out.OutputTokens = EstimateTokenByModel(in.Model, respText)
+		respCtx = &tokenEstimateContext{text: respText, completion: true}
+		out.OutputTokens = EstimateTokenByModel(in.Model, respCtx)
 	}
 	out.TotalTokens = out.InputTokens + out.OutputTokens
 
 	// Best-effort overhead for OpenAI-style chat messages only when prompt is estimated.
-	if needPrompt && strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
+	if needPrompt && normalizeAPI(in.API) == apiChatCompletions {
 		msgCount := countMessagesFromParsed(reqParsed)
 		if msgCount > 0 {
 			out.InputTokens += msgCount*3 + 3
@@ -195,280 +213,4 @@ func isAllZero(u *dslconfig.Usage) bool {
 	}
 	return u.InputTokens == 0 && u.OutputTokens == 0 && u.TotalTokens == 0 &&
 		(u.InputTokenDetails == nil || (u.InputTokenDetails.CachedTokens == 0 && u.InputTokenDetails.CacheWriteTokens == 0))
-}
-
-func extractRequestText(api string, body []byte, limit int) string {
-	return extractRequestTextFromParsed(api, parseRequestBody(body, nil, limit))
-}
-
-func parseRequestBody(body []byte, root map[string]any, limit int) parsedRequestBody {
-	body = clampBytes(body, limit)
-	if root != nil {
-		return parsedRequestBody{raw: body, obj: root, root: root}
-	}
-	if len(bytes.TrimSpace(body)) == 0 {
-		return parsedRequestBody{raw: body}
-	}
-	var obj any
-	if err := json.Unmarshal(body, &obj); err != nil {
-		return parsedRequestBody{raw: body, err: err}
-	}
-	m, _ := obj.(map[string]any)
-	return parsedRequestBody{raw: body, obj: obj, root: m}
-}
-
-func extractRequestTextFromParsed(api string, parsed parsedRequestBody) string {
-	if len(bytes.TrimSpace(parsed.raw)) == 0 {
-		return ""
-	}
-	if parsed.err != nil {
-		return string(bytes.TrimSpace(parsed.raw))
-	}
-	m := parsed.root
-	if m == nil {
-		return ""
-	}
-
-	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "embeddings", apiResponses:
-		// responses can use "input", embeddings uses "input".
-		if v, ok := m["input"]; ok {
-			return stringifyAny(v)
-		}
-	case "gemini.generatecontent", "gemini.streamgeneratecontent":
-		// Gemini native request: contents[].parts[].text
-		if v, ok := m["contents"]; ok {
-			return stringifyGeminiContents(v)
-		}
-	}
-
-	if v, ok := m["messages"]; ok {
-		return stringifyMessages(v)
-	}
-	if v, ok := m["prompt"]; ok {
-		return stringifyAny(v)
-	}
-	if v, ok := m["input"]; ok {
-		return stringifyAny(v)
-	}
-	return ""
-}
-
-func extractResponseText(api string, body []byte, limit int) string {
-	body = clampBytes(body, limit)
-	if len(bytes.TrimSpace(body)) == 0 {
-		return ""
-	}
-	var obj any
-	if err := json.Unmarshal(body, &obj); err != nil {
-		return ""
-	}
-	m, _ := obj.(map[string]any)
-	if m == nil {
-		return ""
-	}
-
-	switch strings.ToLower(strings.TrimSpace(api)) {
-	case apiChatCompletions:
-		// choices[].message.content or choices[].text
-		if v, ok := m["choices"]; ok {
-			if arr, ok := v.([]any); ok {
-				var b strings.Builder
-				for _, it := range arr {
-					cm, _ := it.(map[string]any)
-					if cm == nil {
-						continue
-					}
-					if msg, ok := cm["message"].(map[string]any); ok {
-						if s, ok := msg["content"].(string); ok {
-							b.WriteString(s)
-							b.WriteByte('\n')
-						}
-					}
-					if s, ok := cm["text"].(string); ok {
-						b.WriteString(s)
-						b.WriteByte('\n')
-					}
-				}
-				return b.String()
-			}
-		}
-	case "claude.messages":
-		// content[].text
-		if v, ok := m["content"]; ok {
-			if arr, ok := v.([]any); ok {
-				var b strings.Builder
-				for _, it := range arr {
-					im, _ := it.(map[string]any)
-					if im == nil {
-						continue
-					}
-					if s, ok := im["text"].(string); ok {
-						b.WriteString(s)
-						b.WriteByte('\n')
-					}
-				}
-				return b.String()
-			}
-		}
-	case "responses":
-		// best-effort: output_text or any nested "text"
-		if s, ok := m["output_text"].(string); ok && strings.TrimSpace(s) != "" {
-			return s
-		}
-	case "gemini.generatecontent", "gemini.streamgeneratecontent":
-		// Gemini native response: candidates[].content.parts[].text
-		if v, ok := m["candidates"]; ok {
-			return stringifyGeminiCandidates(v)
-		}
-	}
-
-	// Fallback: gather any nested "text" fields.
-	var out strings.Builder
-	collectTextFields(&out, obj, 0, 8)
-	return out.String()
-}
-
-func extractStreamText(api string, sse []byte, limit int) string {
-	return streamtext.ExtractFromSSE(api, sse, limit)
-}
-
-func collectTextFields(out *strings.Builder, v any, depth, maxDepth int) {
-	if out == nil || depth > maxDepth || v == nil {
-		return
-	}
-	switch t := v.(type) {
-	case map[string]any:
-		for k, vv := range t {
-			if strings.EqualFold(k, "text") {
-				if s, ok := vv.(string); ok && strings.TrimSpace(s) != "" {
-					out.WriteString(s)
-					out.WriteByte('\n')
-					continue
-				}
-			}
-			collectTextFields(out, vv, depth+1, maxDepth)
-		}
-	case []any:
-		for _, it := range t {
-			collectTextFields(out, it, depth+1, maxDepth)
-		}
-	}
-}
-
-func stringifyAny(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []any:
-		var b strings.Builder
-		for _, it := range t {
-			s := stringifyAny(it)
-			if strings.TrimSpace(s) == "" {
-				continue
-			}
-			b.WriteString(s)
-			b.WriteByte('\n')
-		}
-		return b.String()
-	case map[string]any:
-		if s, ok := t["text"].(string); ok {
-			return s
-		}
-		var b strings.Builder
-		collectTextFields(&b, t, 0, 4)
-		return b.String()
-	default:
-		return ""
-	}
-}
-
-func stringifyMessages(v any) string {
-	arr, ok := v.([]any)
-	if !ok {
-		return stringifyAny(v)
-	}
-	var b strings.Builder
-	for _, it := range arr {
-		m, _ := it.(map[string]any)
-		if m == nil {
-			continue
-		}
-		if c, ok := m["content"]; ok {
-			s := stringifyAny(c)
-			if strings.TrimSpace(s) != "" {
-				b.WriteString(s)
-				b.WriteByte('\n')
-			}
-		}
-	}
-	return b.String()
-}
-
-func stringifyGeminiContents(v any) string {
-	arr, ok := v.([]any)
-	if !ok {
-		return stringifyAny(v)
-	}
-	var b strings.Builder
-	for _, it := range arr {
-		m, _ := it.(map[string]any)
-		if m == nil {
-			continue
-		}
-		if parts, ok := m["parts"]; ok {
-			s := stringifyAny(parts)
-			if strings.TrimSpace(s) != "" {
-				b.WriteString(s)
-				b.WriteByte('\n')
-			}
-		}
-	}
-	return b.String()
-}
-
-func stringifyGeminiCandidates(v any) string {
-	arr, ok := v.([]any)
-	if !ok {
-		return stringifyAny(v)
-	}
-	var b strings.Builder
-	for _, it := range arr {
-		m, _ := it.(map[string]any)
-		if m == nil {
-			continue
-		}
-		if content, ok := m["content"].(map[string]any); ok {
-			if parts, ok := content["parts"]; ok {
-				s := stringifyAny(parts)
-				if strings.TrimSpace(s) != "" {
-					b.WriteString(s)
-					b.WriteByte('\n')
-				}
-			}
-		}
-	}
-	return b.String()
-}
-
-func clampBytes(b []byte, limit int) []byte {
-	if limit <= 0 || len(b) <= limit {
-		return b
-	}
-	return b[:limit]
-}
-
-func countMessages(reqBody []byte, limit int) int {
-	return countMessagesFromParsed(parseRequestBody(reqBody, nil, limit))
-}
-
-func countMessagesFromParsed(parsed parsedRequestBody) int {
-	if parsed.root == nil {
-		return 0
-	}
-	v, ok := parsed.root["messages"].([]any)
-	if !ok {
-		return 0
-	}
-	return len(v)
 }
