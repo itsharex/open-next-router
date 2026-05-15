@@ -32,15 +32,16 @@ func stringifyAny(v any) string {
 	case map[string]any:
 		var b strings.Builder
 		if role, ok := t["role"].(string); ok {
-			b.WriteString(role + " ")
+			b.WriteString(role)
 		}
 
 		if text, ok := t["text"].(string); ok {
-			b.WriteString(text + " ")
+			b.WriteString(text)
+			return b.String()
 		}
 		if content, ok := t["content"].(string); ok {
 			// Anthropic example: {"role": "user", "content": "Hello"}
-			b.WriteString(content + " ")
+			b.WriteString(content)
 		}
 
 		collectTextFields(&b, t, 0, 4)
