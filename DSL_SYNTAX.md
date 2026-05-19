@@ -759,20 +759,43 @@ Multiple/override rules:
 
 - These fields are optional overrides; if the same field appears multiple times, the last one wins.
 
+#### usage_root (recommended with usage_fact)
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_root path="$.usage";
+
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+}
+```
+
+- `usage_root` extracts a nested usage JSON object before `usage_fact` rules run.
+- When `usage_root` is configured, `usage_fact` rules without `source` read from the merged usage object. Without `usage_root`, the old default still reads from the raw response.
+- Multiple `usage_root` rules are merged into a single usage object.
+- `event="a|b"` may match multiple SSE event names.
+- `event_optional=true` must be used together with `event="..."`.
+- `usage_root` does not support `name`.
+- Use `source="response"` on a `usage_fact` that must still read from the raw response payload.
+
 #### usage_fact (recommended new form)
 
 ```conf
 metrics {
   usage_extract custom;
 
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
-  usage_fact cache_read token path="$.usage.cache_details.image_cached_tokens" attr.modality="image";
+  usage_root path="$.usage";
 
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact cache_read token path="$.cache_read_input_tokens";
+  usage_fact cache_read token path="$.cache_details.image_cached_tokens" attr.modality="image";
+
+  usage_fact cache_write token path="$.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.cache_creation_input_tokens" fallback=true;
 }
 ```
 
@@ -781,13 +804,14 @@ metrics {
 - Named presets are compiled into the same internal fact-based execution plan and may still be supplemented with extra `usage_fact` rules.
 - Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
 - `count_path` can be combined with `type` and `status`.
-- `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start` or `message_delta`.
+- `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start`, `message_delta`, or `response.completed|response.incomplete`.
 - `event_optional=true` may be used together with `event="..."` when a provider sometimes omits SSE `event:` names.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
 - `attr.modality="text|image|audio|video"` may be used with `cache_read token` when the upstream reports real per-modality cached token counts. Relay uses this metadata to build provider cache detail fields such as `openai_cache` / `gemini_cache`.
 - Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
-- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- `source` defaults to `usage` when `usage_root` is configured, otherwise it defaults to `response`.
+- `source` currently supports `usage`, `response`, `request`, and `derived`.
 - `dimension` is a flat registry key; `.` is part of the name and does not imply nested structure.
 - Supported `dimension` values and `dimension + unit` pairs are fixed by registry; see the later [`usage_fact`](#usage_fact) directive reference for the complete list.
 - `path`, `count_path`, `sum_path`, and `expr` may use either double-quoted or single-quoted strings.
@@ -1705,6 +1729,21 @@ Multiple: yes
 - Shorthand for `cache_write_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
 - Compatibility-layer shorthand: it is compiled into equivalent internal fact-based rules before execution.
 
+#### usage_root
+
+```text
+Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true];
+Default: —
+Context: metrics, usage_mode
+Multiple: yes
+```
+
+- `path` is required and must start with `$.`.
+- `event` is optional and only applies to stream extraction.
+- `event_optional=true` requires `event`.
+- Multiple matched usage roots are merged into one usage object.
+- `usage_root` does not support `name`.
+
 #### usage_fact
 
 ```text
@@ -1722,7 +1761,7 @@ Multiple: yes
 - `attr.modality` is meaningful for `cache_read token` when an upstream reports real per-modality cached token counts. Supported values are `text`, `image`, `audio`, and `video`; OpenAI cache detail uses text/image/audio, while Gemini cache detail uses text/image/audio/video.
 - Multiple rules may share the same `dimension + unit`; all matched non-fallback rules are summed.
 - `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
-- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- `source` defaults to `usage` when `usage_root` is configured, otherwise it defaults to `response`; current values are `usage`, `response`, `request`, and `derived`.
 - `dimension` is a flat string key; `.` is part of the name and does not imply nesting.
 - Supported `dimension` values:
   - `input`

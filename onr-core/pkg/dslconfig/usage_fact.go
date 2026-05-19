@@ -177,15 +177,15 @@ func usageFactExplicitKeys(facts []usageFactConfig) map[usageFactKey]struct{} {
 	return out
 }
 
-func evaluateUsageFactConfigGroupsWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, grouped map[usageFactKey][]usageFactConfig, totalFacts int) []usageFactEval {
+func evaluateUsageFactConfigGroupsWithEvent(event string, reqRoot, respRoot, usageRoot, derivedRoot map[string]any, usageRootConfigured bool, grouped map[usageFactKey][]usageFactConfig, totalFacts int) []usageFactEval {
 	out := make([]usageFactEval, 0, totalFacts)
 	for _, group := range grouped {
-		out = append(out, evaluateUsageFactGroupWithEvent(event, reqRoot, respRoot, derivedRoot, group)...)
+		out = append(out, evaluateUsageFactGroupWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, usageRootConfigured, group)...)
 	}
 	return out
 }
 
-func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
+func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, usageRoot, derivedRoot map[string]any, usageRootConfigured bool, facts []usageFactConfig) []usageFactEval {
 	out := make([]usageFactEval, 0, len(facts))
 	var specificMatched bool
 	seenEventOptionalFallback := make(map[string]struct{}, len(facts))
@@ -199,7 +199,7 @@ func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoo
 		if shouldSkipDuplicateEventOptionalFallback(event, fact, seenEventOptionalFallback) {
 			continue
 		}
-		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, derivedRoot, fact)
+		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, usageRootConfigured, fact)
 		if matched {
 			specificMatched = true
 		}
@@ -215,7 +215,7 @@ func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoo
 		if shouldSkipDuplicateEventOptionalFallback(event, fact, seenEventOptionalFallback) {
 			continue
 		}
-		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, derivedRoot, fact)
+		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, usageRootConfigured, fact)
 		out = append(out, usageFactEval{cfg: fact, quantity: q, matched: matched})
 	}
 	return out
@@ -259,22 +259,16 @@ func usageFactEventOptionalFallbackKey(fact usageFactConfig) string {
 }
 
 func evaluateUsageFact(reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {
-	return evaluateUsageFactWithEvent("", reqRoot, respRoot, derivedRoot, fact)
+	return evaluateUsageFactWithEvent("", reqRoot, respRoot, nil, derivedRoot, false, fact)
 }
 
-func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {
-	root := usageFactSourceRoot(reqRoot, respRoot, derivedRoot, fact.Source)
+func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, usageRoot, derivedRoot map[string]any, usageRootConfigured bool, fact usageFactConfig) (quantity float64, matched bool) {
+	root := usageFactSourceRoot(reqRoot, respRoot, usageRoot, derivedRoot, fact.Source, usageRootConfigured)
 	if len(root) == 0 {
 		return 0, false
 	}
-	if expectedEvent := fact.Event; expectedEvent != "" {
-		currentEvent := strings.TrimSpace(event)
-		switch {
-		case currentEvent == "" && fact.EventOptional:
-			// Fallback to regular chunk matching when SSE framing does not provide an event name.
-		case !strings.EqualFold(expectedEvent, currentEvent):
-			return 0, false
-		}
+	if !matchesUsageEvent(event, fact.Event, fact.EventOptional) {
+		return 0, false
 	}
 	switch {
 	case fact.Expr != nil:
@@ -290,9 +284,16 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, derivedRoot map
 	}
 }
 
-func usageFactSourceRoot(reqRoot, respRoot, derivedRoot map[string]any, source string) map[string]any {
+func usageFactSourceRoot(reqRoot, respRoot, usageRoot, derivedRoot map[string]any, source string, usageRootConfigured bool) map[string]any {
 	switch strings.ToLower(source) {
-	case "", "response":
+	case "":
+		if usageRootConfigured {
+			return usageRoot
+		}
+		return respRoot
+	case "usage":
+		return usageRoot
+	case "response":
 		return respRoot
 	case "request":
 		return reqRoot
@@ -379,7 +380,8 @@ func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg Usage
 
 func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
 	evals := make([]usageFactEval, 0, len(cfg.facts))
-	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, derivedRoot, cfg.factGroups, len(cfg.facts))...)
+	usageRoot := extractUsageRootWithEvent(event, respRoot, cfg.usageRoots)
+	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, len(cfg.usageRoots) > 0, cfg.factGroups, len(cfg.facts))...)
 
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
@@ -463,7 +465,11 @@ func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
 
 func normalizeUsageFactSource(source string) string {
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "response":
+	case "":
+		return ""
+	case "usage":
+		return "usage"
+	case "response":
 		return "response"
 	case "request":
 		return "request"

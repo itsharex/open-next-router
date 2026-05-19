@@ -21,7 +21,8 @@
   - [5.5 response（响应处理）](#55-response响应处理)
   - [5.6 error（错误归一化）](#56-error错误归一化)
   - [5.7 metrics（用量提取--usage）](#57-metrics用量提取--usage)
-    - [5.7.1 usage_fact（推荐的新写法）](#571-usage_fact推荐的新写法)
+    - [5.7.1 usage_root（推荐配合 usage_fact 使用）](#usage_root推荐配合-usage_fact-使用)
+    - [5.7.2 usage_fact（推荐的新写法）](#usage_fact推荐的新写法)
 - [6. 可用的 Context（表达式变量）](#6-可用的-context表达式变量)
 - [7. 指令参考（nginx 风格）](#7-指令参考nginx-风格)
   - [7.1 顶层指令](#71-顶层指令)
@@ -33,7 +34,8 @@
   - [7.7 response（响应）](#77-response响应)
   - [7.8 error（错误归一化）](#78-error错误归一化)
   - [7.9 metrics（用量提取--usage）](#79-metrics用量提取--usage)
-    - [7.9.1 usage_fact](#791-usage_fact)
+    - [7.9.1 usage_root](#usage_root)
+    - [7.9.2 usage_fact](#usage_fact)
 - [8. 内置变量参考](#8-内置变量参考)
 
 ---
@@ -805,20 +807,47 @@ usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modal
 
 - 这些字段都是“可选覆盖项”，同字段重复出现时以后者为准
 
+#### usage_root（推荐配合 usage_fact 使用）
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_root path="$.usage";
+
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+}
+```
+
+- `usage_root` 用于先从响应 JSON / SSE event JSON 中提取 usage 子树。
+- 配置了 `usage_root` 后，未显式写 `source` 的 `usage_fact` 默认从合并后的 usage 子树读取；未配置 `usage_root` 时仍兼容旧行为，默认从原始 `response` 读取。
+- 可以配置多条 `usage_root`，命中的 usage 对象会合并到同一个结构里，后续非零字段可补齐或覆盖前面的零值字段。
+- `event="a|b"` 可用于匹配多个 SSE 事件名。
+- `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容上游有时不带 SSE `event:` 的情况。
+- `usage_root` 不支持 `name`，统一合并为一个 usage 对象。
+- 需要继续从原始响应读取的事实应显式写 `source="response"`，例如：
+
+```conf
+usage_fact server_tool.web_search call source="response" count_path="$.output[*]" type="web_search_call" status="completed";
+```
+
 #### usage_fact（推荐的新写法）
 
 ```conf
 metrics {
   usage_extract custom;
 
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
-  usage_fact cache_read token path="$.usage.cache_details.image_cached_tokens" attr.modality="image";
+  usage_root path="$.usage";
 
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact cache_read token path="$.cache_read_input_tokens";
+  usage_fact cache_read token path="$.cache_details.image_cached_tokens" attr.modality="image";
+
+  usage_fact cache_write token path="$.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.cache_creation_input_tokens" fallback=true;
 }
 ```
 
@@ -826,15 +855,15 @@ metrics {
 - 在 `metrics` 里，只写 `usage_fact` 而省略 `usage_extract`，等价于 `usage_extract custom;`
 - 命名 preset 现在也会先编译成同一套内部 fact-based 执行计划，再叠加显式 `usage_fact`
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
-- `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`
+- `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`；也支持 `response.completed|response.incomplete` 这种多事件写法
 - `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容“有时有 event、有时没有 event”的上游
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - `attr.modality="text|image|audio|video"` 可用于 `cache_read token`，表示上游真实返回的分模态 cached token。Relay 会用它生成 `openai_cache` / `gemini_cache` 这类 provider cache detail 字段。
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
-- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
-- `source=response` 表示从当前响应 JSON 提取；`source=request` 表示从当前请求 JSON 提取；`source=derived` 表示从 ONR 运行时派生出的聚合结果提取
-- 当前不支持除 `response` / `request` / `derived` 之外的其他 `source`
+- `source` 在配置了 `usage_root` 时默认是 `usage`，否则默认是 `response`
+- `source=usage` 表示从 `usage_root` 合并后的 usage 对象读取；`source=response` 表示从当前响应 JSON 提取；`source=request` 表示从当前请求 JSON 提取；`source=derived` 表示从 ONR 运行时派生出的聚合结果提取
+- 当前不支持除 `usage` / `response` / `request` / `derived` 之外的其他 `source`
 - `dimension` 是 registry 中的扁平命名空间字符串，`.` 只是名称的一部分，不表示嵌套结构
 - 当前支持的 `dimension` 与 `dimension + unit` 固定 registry，完整列表见后文 [`usage_fact`](#usage_fact) 指令说明
 - 仓库内置的 OpenAI API-specific 预设通常会补齐这些 canonical facts：
@@ -1551,6 +1580,21 @@ Multiple: no
 
 - 目前支持：`openai` / `anthropic` / `gemini` / `custom`。
 
+#### usage_root
+
+```text
+Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true];
+Default: —
+Context: metrics, usage_mode
+Multiple: yes
+```
+
+- `path` 必填，必须以 `$.` 开头。
+- `event` 可选，只对流式 SSE 提取有意义，支持用 `|` 配置多个事件名。
+- `event_optional=true` 必须与 `event` 同时出现。
+- 多条 `usage_root` 命中时会合并成一个 usage 对象。
+- `usage_root` 不支持 `name`。
+
 #### usage_fact
 
 ```text
@@ -1570,8 +1614,8 @@ Multiple: yes
 - `attr.modality` 对 `cache_read token` 有特殊含义，用于表达上游真实返回的分模态 cached token。支持值为 `text` / `image` / `audio` / `video`；OpenAI cache detail 使用 text/image/audio，Gemini cache detail 使用 text/image/audio/video。
 - 同一 `dimension + unit` 可以出现多条规则；所有命中的非 fallback 规则会累计求和。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
-- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。
-- `response` / `request` / `derived` 之外的其他 `source` 会在校验阶段直接报错。
+- `source` 在配置了 `usage_root` 时默认是 `usage`，否则默认是 `response`；当前支持 `usage` / `response` / `request` / `derived`。
+- `usage` / `response` / `request` / `derived` 之外的其他 `source` 会在校验阶段直接报错。
 - `dimension` 是扁平字符串键，`.` 只是名称的一部分，不表示嵌套。
 - 实时多模态的 meter-based facts（例如 `audio.input second`）属于计划中的目标能力；若文档其他位置出现相关示例，应视为预览写法，不代表当前 registry 已开放。
 - `path` / `count_path` / `sum_path` / `expr` 既可以用双引号，也可以用单引号包裹。

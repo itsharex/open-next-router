@@ -11,6 +11,10 @@ func (cfg UsageExtractConfig) DeclaredFacts() []UsageFact {
 	return cloneUsageFactsForIntrospection(cfg.facts)
 }
 
+func (cfg UsageExtractConfig) DeclaredUsageRoots() []UsageRoot {
+	return cloneUsageRootsForIntrospection(cfg.usageRoots)
+}
+
 func (cfg UsageExtractConfig) BuiltinFacts() []UsageFact {
 	_ = cfg
 	return nil
@@ -25,9 +29,25 @@ func (cfg UsageExtractConfig) CompiledPlan(meta *dslmeta.Meta) UsageExecutionPla
 	compiled := compileUsageExtractConfig(meta, cfg)
 	return UsageExecutionPlan{
 		Mode:            compiled.Mode,
+		UsageRoots:      cloneUsageRootsForIntrospection(compiled.usageRoots),
 		Facts:           cloneUsageFactsForIntrospection(compiled.facts),
 		TotalTokensExpr: usageExprString(compiled.TotalTokensExpr),
 	}
+}
+
+func cloneUsageRootsForIntrospection(roots []usageRootConfig) []UsageRoot {
+	if len(roots) == 0 {
+		return nil
+	}
+	out := make([]UsageRoot, 0, len(roots))
+	for _, root := range roots {
+		out = append(out, UsageRoot{
+			Path:          root.Path,
+			Event:         root.Event,
+			EventOptional: root.EventOptional,
+		})
+	}
+	return out
 }
 
 func (p ProviderUsage) CompiledPlans() ProviderUsageExecutionPlan {
