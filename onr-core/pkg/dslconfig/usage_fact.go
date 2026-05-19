@@ -436,6 +436,7 @@ func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot ma
 		total := cfg.TotalTokensExpr.Eval(respRoot)
 		usage.TotalTokens = total
 	}
+	usage.UsageRoot = cloneUsageRootValue(usageRoot)
 	return usage, cachedTokens, nil
 }
 
@@ -451,6 +452,7 @@ func extractCustomUsageFromMergedUsageRoot(reqRoot, usageRoot, derivedRoot map[s
 	// recomputed from projected input/output to avoid re-evaluating response-root
 	// expressions against the usage-root object.
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	usage.UsageRoot = cloneUsageRootValue(usageRoot)
 	return usage, cachedTokens, nil
 }
 

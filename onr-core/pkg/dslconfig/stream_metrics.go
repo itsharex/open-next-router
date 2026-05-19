@@ -252,6 +252,9 @@ func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
 	}
 	mergeUsageFlatFieldsPreferNonZero(dst, src)
 	mergeUsageDebugFactsPreferNonZero(dst, src)
+	if len(src.UsageRoot) > 0 {
+		dst.UsageRoot = cloneUsageRootValue(src.UsageRoot)
+	}
 
 	normalizeUsageFields(dst)
 }

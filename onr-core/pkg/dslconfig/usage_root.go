@@ -136,3 +136,18 @@ func cloneUsageRootConfigs(roots []usageRootConfig) []usageRootConfig {
 	copy(out, roots)
 	return out
 }
+
+func cloneUsageRootValue(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if child, ok := v.(map[string]any); ok {
+			out[k] = cloneUsageRootValue(child)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}

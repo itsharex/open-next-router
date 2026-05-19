@@ -13,6 +13,7 @@ type Usage struct {
 
 	FlatFields map[string]any `json:"-"`
 	DebugFacts []UsageFact    `json:"-"`
+	UsageRoot  map[string]any `json:"-"`
 }
 
 type ResponseTokenDetails struct {
