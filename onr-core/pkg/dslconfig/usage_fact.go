@@ -185,6 +185,22 @@ func evaluateUsageFactConfigGroupsWithEvent(event string, reqRoot, respRoot, usa
 	return out
 }
 
+func filterUsageFactConfigForStream(cfg UsageExtractConfig, keep func(usageFactConfig) bool) UsageExtractConfig {
+	if len(cfg.facts) == 0 {
+		return cfg
+	}
+	filtered := make([]usageFactConfig, 0, len(cfg.facts))
+	for _, fact := range cfg.facts {
+		if keep(fact) {
+			filtered = append(filtered, fact)
+		}
+	}
+	cfg.facts = filtered
+	cfg.factGroups = nil
+	cfg.explicitFactKeys = nil
+	return prepareUsageExtractConfig(cfg)
+}
+
 func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, usageRoot, derivedRoot map[string]any, usageRootConfigured bool, facts []usageFactConfig) []usageFactEval {
 	out := make([]usageFactEval, 0, len(facts))
 	var specificMatched bool
@@ -420,6 +436,21 @@ func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot ma
 		total := cfg.TotalTokensExpr.Eval(respRoot)
 		usage.TotalTokens = total
 	}
+	return usage, cachedTokens, nil
+}
+
+func extractCustomUsageFromMergedUsageRoot(reqRoot, usageRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+	evals := make([]usageFactEval, 0, len(cfg.facts))
+	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent("", reqRoot, nil, usageRoot, derivedRoot, true, cfg.factGroups, len(cfg.facts))...)
+
+	usage, cachedTokens, err := projectUsageFromFacts(evals, true)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Stream final-stage facts already read from the merged usage root. Total is
+	// recomputed from projected input/output to avoid re-evaluating response-root
+	// expressions against the usage-root object.
+	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	return usage, cachedTokens, nil
 }
 

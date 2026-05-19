@@ -775,6 +775,7 @@ metrics {
 - `usage_root` extracts a nested usage JSON object before `usage_fact` rules run.
 - When `usage_root` is configured, `usage_fact` rules without `source` read from the merged usage object. Without `usage_root`, the old default still reads from the raw response.
 - Multiple `usage_root` rules are merged into a single usage object.
+- For stream extraction, ONR merges `usage_root` from each chunk first, then runs default-source / `source=usage` facts once at stream end. Explicit `source=response`, `request`, and `derived` facts still run during chunk processing according to their own source and event filters.
 - `event="a|b"` may match multiple SSE event names.
 - `event_optional=true` must be used together with `event="..."`.
 - `usage_root` does not support `name`.

@@ -823,6 +823,7 @@ metrics {
 - `usage_root` 用于先从响应 JSON / SSE event JSON 中提取 usage 子树。
 - 配置了 `usage_root` 后，未显式写 `source` 的 `usage_fact` 默认从合并后的 usage 子树读取；未配置 `usage_root` 时仍兼容旧行为，默认从原始 `response` 读取。
 - 可以配置多条 `usage_root`，命中的 usage 对象会合并到同一个结构里，后续非零字段可补齐或覆盖前面的零值字段。
+- 流式提取时，ONR 会先在每个 chunk 中合并 `usage_root`，等 stream 结束后再从合并结果执行默认 source / `source=usage` 的 `usage_fact`；显式 `source=response` / `request` / `derived` 的事实仍在 chunk 阶段按自己的 source 与 event 执行。
 - `event="a|b"` 可用于匹配多个 SSE 事件名。
 - `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容上游有时不带 SSE `event:` 的情况。
 - `usage_root` 不支持 `name`，统一合并为一个 usage 对象。

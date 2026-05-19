@@ -89,6 +89,28 @@ func usageRootValueIsEmpty(v any) bool {
 	}
 }
 
+func mergeUsageRootLatestNonZero(dst, src map[string]any) {
+	for key, next := range src {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if current, ok := dst[key]; ok {
+			currentMap, currentIsMap := current.(map[string]any)
+			nextMap, nextIsMap := next.(map[string]any)
+			if currentIsMap && nextIsMap {
+				mergeUsageRootLatestNonZero(currentMap, nextMap)
+				continue
+			}
+			if !usageRootValueIsEmpty(next) || usageRootValueIsEmpty(current) {
+				dst[key] = next
+			}
+			continue
+		}
+		dst[key] = next
+	}
+}
+
 func matchesUsageEvent(current, expected string, optional bool) bool {
 	expected = strings.TrimSpace(expected)
 	if expected == "" {
