@@ -199,6 +199,10 @@ func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, usageRoot,
 		if shouldSkipDuplicateEventOptionalFallback(event, fact, seenEventOptionalFallback) {
 			continue
 		}
+		if shouldSkipUsageFactBeforeEval(event, fact, usageRootConfigured, len(usageRoot) > 0) {
+			out = append(out, usageFactEval{cfg: fact})
+			continue
+		}
 		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, usageRootConfigured, fact)
 		if matched {
 			specificMatched = true
@@ -215,10 +219,35 @@ func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, usageRoot,
 		if shouldSkipDuplicateEventOptionalFallback(event, fact, seenEventOptionalFallback) {
 			continue
 		}
+		if shouldSkipUsageFactBeforeEval(event, fact, usageRootConfigured, len(usageRoot) > 0) {
+			out = append(out, usageFactEval{cfg: fact})
+			continue
+		}
 		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, usageRootConfigured, fact)
 		out = append(out, usageFactEval{cfg: fact, quantity: q, matched: matched})
 	}
 	return out
+}
+
+func shouldSkipUsageFactBeforeEval(event string, fact usageFactConfig, usageRootConfigured bool, usageRootAvailable bool) bool {
+	if !matchesUsageEvent(event, fact.Event, fact.EventOptional) {
+		return true
+	}
+	if !usageFactReadsUsageRoot(fact, usageRootConfigured) {
+		return false
+	}
+	return !usageRootAvailable
+}
+
+func usageFactReadsUsageRoot(fact usageFactConfig, usageRootConfigured bool) bool {
+	switch strings.ToLower(strings.TrimSpace(fact.Source)) {
+	case "usage":
+		return true
+	case "":
+		return usageRootConfigured
+	default:
+		return false
+	}
 }
 
 func shouldSkipDuplicateEventOptionalFallback(event string, fact usageFactConfig, seen map[string]struct{}) bool {
@@ -337,7 +366,7 @@ func matchesUsageFactFilter(v any, typ, status string) bool {
 	return true
 }
 
-func projectUsageFromFacts(facts []usageFactEval) (*Usage, int, error) {
+func projectUsageFromFacts(facts []usageFactEval, usageRootConfigured bool) (*Usage, int, error) {
 	usage := &Usage{}
 	var cachedTokens int
 	var cacheWriteTokens int
@@ -370,7 +399,7 @@ func projectUsageFromFacts(facts []usageFactEval) (*Usage, int, error) {
 		}
 	}
 	usage.FlatFields = buildUsageFlatFields(facts)
-	usage.DebugFacts = buildUsageDebugFacts(facts)
+	usage.DebugFacts = buildUsageDebugFacts(facts, usageRootConfigured)
 	return usage, cachedTokens, nil
 }
 
@@ -383,7 +412,7 @@ func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot ma
 	usageRoot := extractUsageRootWithEvent(event, respRoot, cfg.usageRoots)
 	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, len(cfg.usageRoots) > 0, cfg.factGroups, len(cfg.facts))...)
 
-	usage, cachedTokens, err := projectUsageFromFacts(evals)
+	usage, cachedTokens, err := projectUsageFromFacts(evals, len(cfg.usageRoots) > 0)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -425,7 +454,7 @@ func buildUsageFlatFields(facts []usageFactEval) map[string]any {
 	return out
 }
 
-func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
+func buildUsageDebugFacts(facts []usageFactEval, usageRootConfigured bool) []UsageFact {
 	out := make([]UsageFact, 0, len(facts))
 	for _, fact := range facts {
 		if !fact.matched {
@@ -435,7 +464,7 @@ func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
 			Dimension:     fact.cfg.Dimension,
 			Unit:          fact.cfg.Unit,
 			Quantity:      fact.quantity,
-			Source:        normalizeUsageFactSource(fact.cfg.Source),
+			Source:        effectiveUsageFactSource(fact.cfg.Source, usageRootConfigured),
 			Fallback:      fact.cfg.Fallback,
 			Event:         fact.cfg.Event,
 			EventOptional: fact.cfg.EventOptional,
@@ -476,6 +505,13 @@ func normalizeUsageFactSource(source string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(source))
 	}
+}
+
+func effectiveUsageFactSource(source string, usageRootConfigured bool) string {
+	if strings.TrimSpace(source) == "" && usageRootConfigured {
+		return "usage"
+	}
+	return normalizeUsageFactSource(source)
 }
 
 func normalizeUsageFactFlatFieldValue(v float64) any {

@@ -545,7 +545,7 @@ usage_mode "shared_openai" {
 - `usage_mode` 是顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 usage 预设。
 - 推荐把这类全局 DSL 预设单独放在 `config/modes/usage_modes.conf` 这类文件里，再由 `config/onr.conf` 通过 `include modes/*.conf;` 在 `include providers;` 之前先引入。
 - 它可以单独放在一个没有 `provider {}` 的 `.conf` 文件里；这类文件在 `config/providers/` 中是合法的，但不会出现在 provider 列表里。
-- `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
+- `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_root`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
 - `usage_mode` 内部也可以继续通过 `usage_extract <other_mode>;` 引用另一个 `usage_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`usage_mode` 名字是全局唯一的；重名会在校验期报错。
 - 本仓库默认的 `config/modes/usage_modes.conf` 会定义 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
@@ -634,7 +634,7 @@ metrics { usage_extract custom; }
 - 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
 - `openai` / `anthropic` / `gemini` 这类泛化名字不再是特殊的 DSL 内置 `usage_extract` mode；如果你想继续用这些名字，需要自己显式定义对应的全局 `usage_mode` 预设。
 - 用户自定义 `usage_mode` 也会先完成解析，再编译进同一套统一 fact-based 执行计划。
-- 在 `metrics` 里，如果声明了 `usage_fact`、`*_tokens_path` 或 `*_tokens_expr`，但没有写 `usage_extract`，ONR 会自动按 `usage_extract custom;` 处理。
+- 在 `metrics` 里，如果声明了 `usage_fact`、`*_tokens_path` 或 `*_tokens_expr`，但没有写 `usage_extract`，ONR 会自动按 `usage_extract custom;` 处理。仅声明 `usage_root` 不会触发 usage 提取，因为它只是给 `usage_fact` 提供读取根对象。
 - 若在代码侧做 introspection，建议区分三层：
   - declared：用户显式写的 `usage_fact`
   - compiled：最终真正参与执行的统一 usage plan

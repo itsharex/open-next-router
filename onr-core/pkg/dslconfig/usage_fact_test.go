@@ -1301,6 +1301,14 @@ func TestExtractUsage_UsageRootDefaultSource(t *testing.T) {
 	if got, want := usage.OutputTokens, 13; got != want {
 		t.Fatalf("OutputTokens got %d, want %d", got, want)
 	}
+	if got, want := len(usage.DebugFacts), 2; got != want {
+		t.Fatalf("DebugFacts len got %d, want %d", got, want)
+	}
+	for _, fact := range usage.DebugFacts {
+		if got, want := fact.Source, "usage"; got != want {
+			t.Fatalf("debug fact source got %q, want %q", got, want)
+		}
+	}
 }
 
 func TestExtractUsage_UsageRootResponseSourceBypass(t *testing.T) {
@@ -1345,6 +1353,42 @@ func TestExtractUsage_UsageRootResponseSourceBypass(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_UsageRootMissingSkipsDefaultFactsButRunsResponseFacts(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.missing.usage"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "server_tool.web_search", Unit: "call", Source: "response", Path: "$.tool_usage.web_search.num_requests"},
+		},
+	}
+
+	body := []byte(`{
+	  "input_tokens": 99,
+	  "tool_usage": {
+	    "web_search": {
+	      "num_requests": 2
+	    }
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got := usage.InputTokens; got != 0 {
+		t.Fatalf("InputTokens got %d, want 0 because default facts require usage_root", got)
+	}
+	if got, want := usage.FlatFields["server_tool_web_search_calls"], 2; got != want {
+		t.Fatalf("server_tool_web_search_calls got %v, want %v", got, want)
+	}
+}
+
 func TestExtractUsage_UsageRootMergesMultipleRoots(t *testing.T) {
 	cfg := UsageExtractConfig{
 		Mode: usageModeCustom,
@@ -1367,6 +1411,7 @@ func TestExtractUsage_UsageRootMergesMultipleRoots(t *testing.T) {
 		},
 		"delta": map[string]any{
 			"usage": map[string]any{
+				"input_tokens":            99,
 				"output_tokens":           9,
 				"cache_read_input_tokens": 4,
 			},
@@ -1387,6 +1432,39 @@ func TestExtractUsage_UsageRootMergesMultipleRoots(t *testing.T) {
 		t.Fatalf("OutputTokens got %d, want %d", got, want)
 	}
 	if got, want := cached, 4; got != want {
+		t.Fatalf("cached got %d, want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootNestedMergeDoesNotOverwriteNonZero(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.first"},
+			{Path: "$.second"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "cache_read", Unit: "token", Path: "$.input_tokens_details.cached_tokens"},
+		},
+	}
+	root := map[string]any{
+		"first": map[string]any{
+			"input_tokens_details": map[string]any{
+				"cached_tokens": 3,
+			},
+		},
+		"second": map[string]any{
+			"input_tokens_details": map[string]any{
+				"cached_tokens": 99,
+			},
+		},
+	}
+
+	_, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
+	}
+	if got, want := cached, 3; got != want {
 		t.Fatalf("cached got %d, want %d", got, want)
 	}
 }
@@ -1871,6 +1949,95 @@ provider "usage-root" {
 	}
 	if got, want := roots[0].Path, "$.usage"; got != want {
 		t.Fatalf("usage root path=%q want=%q", got, want)
+	}
+	facts := pf.Usage.Defaults.CompiledPlan(nil).Facts
+	if len(facts) != 2 {
+		t.Fatalf("facts len=%d want=2", len(facts))
+	}
+	for _, fact := range facts {
+		if got, want := fact.Source, "usage"; got != want {
+			t.Fatalf("compiled fact source got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestValidateProviderFile_UsageRootOnlyDoesNotSelectUsage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-root-only.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-root-only" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_root path="$.usage";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if _, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions"}); ok {
+		t.Fatalf("expected usage_root-only metrics to produce no usage selection")
+	}
+}
+
+func TestValidateProviderFile_UsageRootOnlyStillValidatesPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-root-only-invalid.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-root-only-invalid" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_root path="usage";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "usage_root[0] path must start with $.") {
+		t.Fatalf("ValidateProviderFile err=%v, want usage_root path validation", err)
+	}
+}
+
+func TestValidateProviderFile_CustomUsageRootOnlyInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom-usage-root-only.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "custom-usage-root-only" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_root path="$.usage";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "custom usage_extract requires") {
+		t.Fatalf("ValidateProviderFile err=%v, want custom usage_extract requires", err)
 	}
 }
 

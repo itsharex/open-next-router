@@ -65,10 +65,7 @@ func mergeUsageRootPreferNonZero(dst, src map[string]any) {
 }
 
 func usageRootValueShouldReplace(current, next any) bool {
-	if usageRootValueIsEmpty(next) {
-		return usageRootValueIsEmpty(current)
-	}
-	return true
+	return usageRootValueIsEmpty(current) && !usageRootValueIsEmpty(next)
 }
 
 func usageRootValueIsEmpty(v any) bool {

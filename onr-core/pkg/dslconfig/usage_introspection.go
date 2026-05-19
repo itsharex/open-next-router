@@ -8,7 +8,7 @@ import (
 
 func (cfg UsageExtractConfig) DeclaredFacts() []UsageFact {
 	cfg = prepareUsageExtractConfig(cfg)
-	return cloneUsageFactsForIntrospection(cfg.facts)
+	return cloneUsageFactsForIntrospection(cfg.facts, false)
 }
 
 func (cfg UsageExtractConfig) DeclaredUsageRoots() []UsageRoot {
@@ -22,7 +22,7 @@ func (cfg UsageExtractConfig) BuiltinFacts() []UsageFact {
 
 func (cfg UsageExtractConfig) CompiledFacts(meta *dslmeta.Meta) []UsageFact {
 	compiled := compileUsageExtractConfig(meta, cfg)
-	return cloneUsageFactsForIntrospection(compiled.facts)
+	return cloneUsageFactsForIntrospection(compiled.facts, len(compiled.usageRoots) > 0)
 }
 
 func (cfg UsageExtractConfig) CompiledPlan(meta *dslmeta.Meta) UsageExecutionPlan {
@@ -30,7 +30,7 @@ func (cfg UsageExtractConfig) CompiledPlan(meta *dslmeta.Meta) UsageExecutionPla
 	return UsageExecutionPlan{
 		Mode:            compiled.Mode,
 		UsageRoots:      cloneUsageRootsForIntrospection(compiled.usageRoots),
-		Facts:           cloneUsageFactsForIntrospection(compiled.facts),
+		Facts:           cloneUsageFactsForIntrospection(compiled.facts, len(compiled.usageRoots) > 0),
 		TotalTokensExpr: usageExprString(compiled.TotalTokensExpr),
 	}
 }
@@ -77,7 +77,7 @@ func (p ProviderUsage) CompiledPlans() ProviderUsageExecutionPlan {
 	return out
 }
 
-func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
+func cloneUsageFactsForIntrospection(facts []usageFactConfig, usageRootConfigured bool) []UsageFact {
 	if len(facts) == 0 {
 		return nil
 	}
@@ -86,7 +86,7 @@ func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
 		item := UsageFact{
 			Dimension:     fact.Dimension,
 			Unit:          fact.Unit,
-			Source:        fact.Source,
+			Source:        effectiveUsageFactSource(fact.Source, usageRootConfigured),
 			Fallback:      fact.Fallback,
 			Event:         fact.Event,
 			EventOptional: fact.EventOptional,

@@ -215,6 +215,11 @@ func validateResolvedUsageExtractConfig(path, providerName, scope string, cfg Us
 		if len(cfg.facts) > 0 {
 			return fmt.Errorf("provider %q in %q: %s usage_fact requires usage_extract mode", providerName, path, scope)
 		}
+		for i, root := range cfg.usageRoots {
+			if err := validateUsageRootConfig(path, providerName, scope, i, root); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	switch mode {
@@ -272,7 +277,6 @@ func hasAnyUsageExtractionRule(cfg UsageExtractConfig) bool {
 		cfg.CacheWriteTokensExpr != nil ||
 		strings.TrimSpace(cfg.CacheWriteTokensPath) != "" ||
 		cfg.TotalTokensExpr != nil ||
-		len(cfg.usageRoots) > 0 ||
 		len(cfg.facts) > 0
 }
 

@@ -519,7 +519,7 @@ usage_mode "shared_openai" {
 - `usage_mode` is a top-level directive. It defines a reusable global usage preset for the whole providers config set.
 - The recommended location for global DSL presets is a separate file under `config/modes/`, such as `config/modes/usage_modes.conf`, then let `config/onr.conf` include `modes/*.conf` before `include providers;`.
 - It may appear in a dedicated `.conf` file that contains no `provider {}` block; such files are valid in `config/providers/` and are ignored by provider listing.
-- Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
+- Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_root`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
 - Another `usage_mode` may be referenced from inside the block via `usage_extract <other_mode>;`, so larger presets can be composed. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `usage_mode` names are validation errors.
 - This repository's default `config/modes/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
@@ -600,7 +600,7 @@ metrics { usage_extract custom; }
 - The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
 - Generic names such as `openai`, `anthropic`, and `gemini` are no longer special builtin `usage_extract` modes. If you want those names, define them explicitly as global `usage_mode` presets.
 - user-defined `usage_mode` names are resolved before execution, then compiled into the same normalized fact-based plan.
-- Inside `metrics`, if you declare `usage_fact`, `*_tokens_path`, or `*_tokens_expr` without `usage_extract`, ONR treats the block as `usage_extract custom;`.
+- Inside `metrics`, if you declare `usage_fact`, `*_tokens_path`, or `*_tokens_expr` without `usage_extract`, ONR treats the block as `usage_extract custom;`. Declaring only `usage_root` does not start usage extraction because it only supplies the root object for `usage_fact`.
 - For code-side introspection, it helps to distinguish three layers:
   - declared: explicit user-authored `usage_fact` rules
   - compiled: the final normalized usage plan that actually executes
