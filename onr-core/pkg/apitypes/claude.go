@@ -131,6 +131,10 @@ func (c *ClaudeContentSource) ToMap() (map[string]any, error) {
 	return out, nil
 }
 
+type ClaudeUnknownSource struct {
+	ClaudeBaseSource // carries the raw type string for any unrecognized source type
+}
+
 type ClaudeSource interface {
 	GetType() string
 }
@@ -387,6 +391,10 @@ func (c *ClaudeCitationSearchResultLocation) ToMap() (map[string]any, error) {
 	out["source"] = c.Source
 	out["search_result_index"] = c.SearchResultIndex
 	return out, nil
+}
+
+type ClaudeUnknownCitation struct {
+	ClaudeBaseCitation // carries the raw type string for any unrecognized citation type
 }
 
 type ClaudeCitation interface {
@@ -1927,6 +1935,10 @@ func (c *ClaudeContainerUploadContent) ToMap() (map[string]any, error) {
 	return out, nil
 }
 
+type ClaudeUnknownContent struct {
+	ClaudeBaseContent // carries the raw type string for any unrecognized content type
+}
+
 type ClaudeContent interface {
 	GetType() string
 }
@@ -2331,6 +2343,10 @@ func (c *ThinkingConfigDisabled) FromMap(m map[string]any) error {
 	return c.BaseThinkingConfig.FromMap(m)
 }
 func (c *ThinkingConfigDisabled) ToMap() (map[string]any, error) { return c.BaseThinkingConfig.ToMap() }
+
+type ThinkingConfigUnknown struct {
+	BaseThinkingConfig // carries the raw type string for any unrecognized thinking config type
+}
 
 type ThinkingConfigInterface interface {
 	GetType() string
@@ -3514,7 +3530,7 @@ func decodeClaudeSourceFromMap(m map[string]any) (ClaudeSource, error) {
 		var v ClaudeContentSource
 		return &v, v.FromMap(m)
 	default:
-		return nil, fmt.Errorf("unsupported claude source type: %q", typeName)
+		return &ClaudeUnknownSource{ClaudeBaseSource: ClaudeBaseSource{Type: typeName}}, nil
 	}
 }
 
@@ -3540,7 +3556,7 @@ func decodeClaudeCitationFromMap(m map[string]any) (ClaudeCitation, error) {
 		var v ClaudeCitationSearchResultLocation
 		return &v, v.FromMap(m)
 	default:
-		return nil, fmt.Errorf("unsupported claude citation type: %q", typeName)
+		return &ClaudeUnknownCitation{ClaudeBaseCitation: ClaudeBaseCitation{Type: typeName}}, nil
 	}
 }
 
@@ -3555,7 +3571,7 @@ func decodeClaudeContentFromMap(m map[string]any) (ClaudeContent, error) {
 	if content, matched, err := decodeClaudeContentFromMapExtended(typeName, m); matched {
 		return content, err
 	}
-	return nil, fmt.Errorf("unsupported claude content type: %q", typeName)
+	return &ClaudeUnknownContent{ClaudeBaseContent: ClaudeBaseContent{Type: typeName}}, nil
 }
 
 func decodeClaudeContentFromMapCore(typeName string, m map[string]any) (ClaudeContent, bool, error) {
@@ -3690,7 +3706,7 @@ func decodeClaudeThinkingFromMap(m map[string]any) (ThinkingConfigInterface, err
 		var v ThinkingConfigDisabled
 		return &v, v.FromMap(m)
 	default:
-		return nil, fmt.Errorf("unsupported thinking config type: %q", typeName)
+		return &ThinkingConfigUnknown{BaseThinkingConfig: BaseThinkingConfig{Type: typeName}}, nil
 	}
 }
 

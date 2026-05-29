@@ -136,3 +136,66 @@ func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_MergesUsageAcrossE
 		t.Fatalf("unexpected output: %s", s)
 	}
 }
+
+func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_PingIgnored(t *testing.T) {
+	in := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_ping_1","model":"claude-sonnet-4-6"}}`,
+		"",
+		"event: ping",
+		`data: {"type":"ping"}`,
+		"",
+		"event: content_block_delta",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`,
+		"",
+		"event: ping",
+		`data: {"type":"ping"}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+
+	var out bytes.Buffer
+	if err := TransformClaudeMessagesSSEToOpenAIChatCompletionsSSE(bytes.NewBufferString(in), &out); err != nil {
+		t.Fatalf("transform error: %v", err)
+	}
+	s := out.String()
+	if !containsAll(s, `"content":"hello"`, `"finish_reason":"stop"`, "data: [DONE]") {
+		t.Fatalf("unexpected output: %s", s)
+	}
+	if strings.Contains(s, `"type":"ping"`) {
+		t.Fatalf("ping event must not appear in downstream output: %s", s)
+	}
+}
+
+func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_UnknownTypeIgnored(t *testing.T) {
+	in := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_unk_1","model":"claude-sonnet-4-6"}}`,
+		"",
+		`data: {"type":"future_event","some_field":"value"}`,
+		"",
+		"event: content_block_delta",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world"}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+
+	var out bytes.Buffer
+	if err := TransformClaudeMessagesSSEToOpenAIChatCompletionsSSE(bytes.NewBufferString(in), &out); err != nil {
+		t.Fatalf("transform error: %v", err)
+	}
+	s := out.String()
+	if !containsAll(s, `"content":"world"`, "data: [DONE]") {
+		t.Fatalf("unexpected output: %s", s)
+	}
+	if strings.Contains(s, "future_event") {
+		t.Fatalf("unknown event must not appear in downstream output: %s", s)
+	}
+}
