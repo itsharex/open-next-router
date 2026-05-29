@@ -132,7 +132,15 @@ func (c *ClaudeContentSource) ToMap() (map[string]any, error) {
 }
 
 type ClaudeUnknownSource struct {
-	ClaudeBaseSource // carries the raw type string for any unrecognized source type
+	ClaudeBaseSource        // carries the raw type string for any unrecognized source type
+	Raw              json.RawMessage `json:"-"`
+}
+
+func (s *ClaudeUnknownSource) MarshalJSON() ([]byte, error) {
+	if len(s.Raw) > 0 {
+		return s.Raw, nil
+	}
+	return json.Marshal(s.ClaudeBaseSource)
 }
 
 type ClaudeSource interface {
@@ -394,7 +402,15 @@ func (c *ClaudeCitationSearchResultLocation) ToMap() (map[string]any, error) {
 }
 
 type ClaudeUnknownCitation struct {
-	ClaudeBaseCitation // carries the raw type string for any unrecognized citation type
+	ClaudeBaseCitation        // carries the raw type string for any unrecognized citation type
+	Raw                json.RawMessage `json:"-"`
+}
+
+func (c *ClaudeUnknownCitation) MarshalJSON() ([]byte, error) {
+	if len(c.Raw) > 0 {
+		return c.Raw, nil
+	}
+	return json.Marshal(c.ClaudeBaseCitation)
 }
 
 type ClaudeCitation interface {
@@ -1936,7 +1952,15 @@ func (c *ClaudeContainerUploadContent) ToMap() (map[string]any, error) {
 }
 
 type ClaudeUnknownContent struct {
-	ClaudeBaseContent // carries the raw type string for any unrecognized content type
+	ClaudeBaseContent        // carries the raw type string for any unrecognized content type
+	Raw               json.RawMessage `json:"-"`
+}
+
+func (c *ClaudeUnknownContent) MarshalJSON() ([]byte, error) {
+	if len(c.Raw) > 0 {
+		return c.Raw, nil
+	}
+	return json.Marshal(c.ClaudeBaseContent)
 }
 
 type ClaudeContent interface {
@@ -2345,7 +2369,15 @@ func (c *ThinkingConfigDisabled) FromMap(m map[string]any) error {
 func (c *ThinkingConfigDisabled) ToMap() (map[string]any, error) { return c.BaseThinkingConfig.ToMap() }
 
 type ThinkingConfigUnknown struct {
-	BaseThinkingConfig // carries the raw type string for any unrecognized thinking config type
+	BaseThinkingConfig        // carries the raw type string for any unrecognized thinking config type
+	Raw                json.RawMessage `json:"-"`
+}
+
+func (t *ThinkingConfigUnknown) MarshalJSON() ([]byte, error) {
+	if len(t.Raw) > 0 {
+		return t.Raw, nil
+	}
+	return json.Marshal(t.BaseThinkingConfig)
 }
 
 type ThinkingConfigInterface interface {
@@ -3530,7 +3562,8 @@ func decodeClaudeSourceFromMap(m map[string]any) (ClaudeSource, error) {
 		var v ClaudeContentSource
 		return &v, v.FromMap(m)
 	default:
-		return &ClaudeUnknownSource{ClaudeBaseSource: ClaudeBaseSource{Type: typeName}}, nil
+		raw, _ := json.Marshal(m)
+		return &ClaudeUnknownSource{ClaudeBaseSource: ClaudeBaseSource{Type: typeName}, Raw: raw}, nil
 	}
 }
 
@@ -3556,7 +3589,8 @@ func decodeClaudeCitationFromMap(m map[string]any) (ClaudeCitation, error) {
 		var v ClaudeCitationSearchResultLocation
 		return &v, v.FromMap(m)
 	default:
-		return &ClaudeUnknownCitation{ClaudeBaseCitation: ClaudeBaseCitation{Type: typeName}}, nil
+		raw, _ := json.Marshal(m)
+		return &ClaudeUnknownCitation{ClaudeBaseCitation: ClaudeBaseCitation{Type: typeName}, Raw: raw}, nil
 	}
 }
 
@@ -3571,7 +3605,8 @@ func decodeClaudeContentFromMap(m map[string]any) (ClaudeContent, error) {
 	if content, matched, err := decodeClaudeContentFromMapExtended(typeName, m); matched {
 		return content, err
 	}
-	return &ClaudeUnknownContent{ClaudeBaseContent: ClaudeBaseContent{Type: typeName}}, nil
+	raw, _ := json.Marshal(m)
+	return &ClaudeUnknownContent{ClaudeBaseContent: ClaudeBaseContent{Type: typeName}, Raw: raw}, nil
 }
 
 func decodeClaudeContentFromMapCore(typeName string, m map[string]any) (ClaudeContent, bool, error) {
@@ -3706,7 +3741,8 @@ func decodeClaudeThinkingFromMap(m map[string]any) (ThinkingConfigInterface, err
 		var v ThinkingConfigDisabled
 		return &v, v.FromMap(m)
 	default:
-		return &ThinkingConfigUnknown{BaseThinkingConfig: BaseThinkingConfig{Type: typeName}}, nil
+		raw, _ := json.Marshal(m)
+		return &ThinkingConfigUnknown{BaseThinkingConfig: BaseThinkingConfig{Type: typeName}, Raw: raw}, nil
 	}
 }
 
