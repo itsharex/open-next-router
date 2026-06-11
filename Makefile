@@ -8,6 +8,7 @@ ENV_FILE ?= ./.env
 GO_BUILD_CACHE ?= /tmp/go-build-cache
 GO ?= go
 ONR_CORE_MODULE := github.com/r9s-ai/open-next-router/onr-core
+ONR_CORE_VERSION ?= latest
 BENCH_COUNT ?= 1
 BENCHTIME ?=
 BENCHMEM ?= -benchmem
@@ -92,21 +93,23 @@ fmt: ## Format code
 lint: ## Run linter (requires golangci-lint)
 	golangci-lint run
 
-prek-install: ## 安装/更新 prek
+prek-install:
 	python3 -m pip install --upgrade prek
 	prek install -t pre-commit -t commit-msg
 
-prek: ## 执行 prek 全量检查
+prek:
 	prek run --all-files
 
-sync-onr-core-version: ## Sync onr-core to the latest local onr-core/v* tag and run go mod tidy
-	@set -e; \
-	tag=$$(git tag -l 'onr-core/v*' | sort -V | tail -n 1); \
-	if [ -z "$$tag" ]; then \
-		echo "No local onr-core/v* tag found"; \
+sync-onr-core-version: ## Sync root go.mod onr-core dependency (ONR_CORE_VERSION=latest or vX.Y.Z)
+	@set -euo pipefail; \
+	version="$(ONR_CORE_VERSION)"; \
+	if [ "$$version" = "latest" ]; then \
+		version="$$(GOWORK=off $(GO) list -m -f '{{.Version}}' "$(ONR_CORE_MODULE)@latest")"; \
+	fi; \
+	if [ -z "$$version" ] || [ "$$version" = "<nil>" ]; then \
+		echo "Failed to resolve $(ONR_CORE_MODULE) version: $(ONR_CORE_VERSION)" >&2; \
 		exit 1; \
 	fi; \
-	version=$${tag#onr-core/}; \
 	echo "Syncing $(ONR_CORE_MODULE) to $$version"; \
 	GOWORK=off $(GO) get $(ONR_CORE_MODULE)@$$version; \
 	GOWORK=off $(GO) mod tidy
