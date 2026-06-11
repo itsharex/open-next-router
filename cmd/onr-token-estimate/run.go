@@ -441,11 +441,11 @@ func readLooseJSONArrayEntries(b []byte) ([]dumpEntry, error) {
 }
 
 func buildEstimateInput(entry dumpEntry, api, model string, allowTruncated bool) (usageestimate.Input, error) {
-	req, _, err := extractDumpBody("request", entry.Request.Body, api, allowTruncated)
+	req, err := extractDumpBody("request", entry.Request.Body, api, allowTruncated)
 	if err != nil {
 		return usageestimate.Input{}, err
 	}
-	resp, stream, err := extractDumpBody("response", entry.Response.Body, api, allowTruncated)
+	resp, err := extractDumpBody("response", entry.Response.Body, api, allowTruncated)
 	if err != nil {
 		return usageestimate.Input{}, err
 	}
@@ -455,40 +455,39 @@ func buildEstimateInput(entry dumpEntry, api, model string, allowTruncated bool)
 		UpstreamUsage: extractUpstreamUsage(entry, api),
 		RequestBody:   req,
 		ResponseBody:  resp,
-		StreamTail:    stream,
 	}, nil
 }
 
-func extractDumpBody(label string, body dumpBody, api string, allowTruncated bool) (jsonBody []byte, sseBody []byte, err error) {
+func extractDumpBody(label string, body dumpBody, api string, allowTruncated bool) ([]byte, error) {
 	if body.Truncated && !allowTruncated {
-		return nil, nil, fmt.Errorf("%s body is truncated", label)
+		return nil, fmt.Errorf("%s body is truncated", label)
 	}
 	switch strings.ToLower(strings.TrimSpace(body.Format)) {
 	case "", "empty":
-		return nil, nil, nil
+		return nil, nil
 	case "json":
 		if len(bytes.TrimSpace(body.Content)) == 0 {
-			return nil, nil, fmt.Errorf("%s json body content is empty", label)
+			return nil, fmt.Errorf("%s json body content is empty", label)
 		}
 		if !json.Valid(body.Content) {
-			return nil, nil, fmt.Errorf("%s json body content is invalid", label)
+			return nil, fmt.Errorf("%s json body content is invalid", label)
 		}
-		return append([]byte(nil), body.Content...), nil, nil
+		return append([]byte(nil), body.Content...), nil
 	case "sse":
 		text, err := extractSSEDeltaText(api, body.Events)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%s sse body: %w", label, err)
+			return nil, fmt.Errorf("%s sse body: %w", label, err)
 		}
 		if strings.TrimSpace(text) == "" {
-			return nil, nil, nil
+			return nil, nil
 		}
 		b, err := buildResponseBodyFromText(api, text)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%s sse body: %w", label, err)
+			return nil, fmt.Errorf("%s sse body: %w", label, err)
 		}
-		return b, nil, nil
+		return b, nil
 	default:
-		return nil, nil, fmt.Errorf("%s body has unsupported format %q", label, body.Format)
+		return nil, fmt.Errorf("%s body has unsupported format %q", label, body.Format)
 	}
 }
 

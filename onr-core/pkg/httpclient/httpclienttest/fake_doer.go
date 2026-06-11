@@ -13,17 +13,25 @@ import (
 // making outbound HTTP requests.
 type FakeDoer struct {
 	t         testing.TB
-	responses []*http.Response
+	responses []Response
 	requests  []*http.Request
+}
+
+// Response describes a fake HTTP response that will be materialized when Do is
+// called.
+type Response struct {
+	StatusCode int
+	Body       string
+	Header     http.Header
 }
 
 // NewFakeDoer returns a FakeDoer seeded with the responses that should be
 // returned for each Do call.
 // NewFakeDoer returns a non-nil fake doer.
-func NewFakeDoer(t testing.TB, responses ...*http.Response) *FakeDoer {
+func NewFakeDoer(t testing.TB, responses ...Response) *FakeDoer {
 	return &FakeDoer{
 		t:         t,
-		responses: append([]*http.Response(nil), responses...),
+		responses: append([]Response(nil), responses...),
 	}
 }
 
@@ -35,7 +43,11 @@ func (f *FakeDoer) Do(req *http.Request) (*http.Response, error) {
 	}
 	resp := f.responses[0]
 	f.responses = f.responses[1:]
-	return resp, nil
+	return &http.Response{
+		StatusCode: resp.StatusCode,
+		Body:       io.NopCloser(strings.NewReader(resp.Body)),
+		Header:     resp.Header.Clone(),
+	}, nil
 }
 
 // Requests returns the HTTP requests captured so far.
@@ -43,13 +55,12 @@ func (f *FakeDoer) Requests() []*http.Request {
 	return append([]*http.Request(nil), f.requests...)
 }
 
-// NewStringResponse builds a minimal http.Response with the provided status
-// code and body string.
-// NewStringResponse returns a non-nil HTTP response.
-func NewStringResponse(status int, body string) *http.Response {
-	return &http.Response{
+// NewStringResponse builds a fake response with the provided status code and
+// body string.
+func NewStringResponse(status int, body string) Response {
+	return Response{
 		StatusCode: status,
-		Body:       io.NopCloser(strings.NewReader(body)),
+		Body:       body,
 		Header:     make(http.Header),
 	}
 }

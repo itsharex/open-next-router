@@ -54,7 +54,6 @@ type tokenEstimateContext struct {
 	numTools                 int  // number of tool definitions
 	numThinkingBlockInput    int
 	numThinkingBlockOutput   int
-	numMessages              int
 	numFunctionCalls         int
 	numFunctionCallOutputs   int
 	numCustomToolCalls       int
@@ -135,7 +134,6 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 		}
 	}
 
-	respCtx := &tokenEstimateContext{}
 	var respText string
 	if needCompletion {
 		if len(in.StreamTail) > 0 {
@@ -157,7 +155,7 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 		out.InputTokens = EstimateTokenByModel(in.Model, reqCtx)
 	}
 	if needCompletion {
-		respCtx = &tokenEstimateContext{text: respText, completion: true}
+		respCtx := &tokenEstimateContext{text: respText, completion: true}
 		out.OutputTokens = EstimateTokenByModel(in.Model, respCtx)
 	}
 	out.TotalTokens = out.InputTokens + out.OutputTokens

@@ -81,7 +81,7 @@ func stringifyOpenaiMessagesObject(t map[string]any, b *strings.Builder, ctx *to
 	}
 
 	if typeInfo, ok := t["type"].(string); ok {
-		stringifyOpenaiMessagesContent(typeInfo, t, b, ctx, deep, maxDeep)
+		stringifyOpenaiMessagesContent(typeInfo, t, b)
 		return
 	}
 
@@ -140,7 +140,7 @@ func stringifyOpenaiToolCall(v any, b *strings.Builder, ctx *tokenEstimateContex
 		b.WriteString("\n")
 	}
 }
-func stringifyOpenaiMessagesContent(typeInfo string, t map[string]any, b *strings.Builder, ctx *tokenEstimateContext, deep int, maxDeep int) {
+func stringifyOpenaiMessagesContent(typeInfo string, t map[string]any, b *strings.Builder) {
 	switch typeInfo {
 
 	case "text": // Text content.
@@ -242,7 +242,7 @@ func stringifyInputObject(t map[string]any, b *strings.Builder, ctx *tokenEstima
 	}
 
 	if typeInfo, ok := t["type"].(string); ok && typeInfo != "message" {
-		stringifyInputContentObject(typeInfo, t, b, ctx, deep, maxDeep)
+		stringifyInputContentObject(typeInfo, t, b, ctx)
 		return
 	}
 
@@ -251,7 +251,7 @@ func stringifyInputObject(t map[string]any, b *strings.Builder, ctx *tokenEstima
 		b.WriteString("\n")
 	}
 }
-func stringifyInputContentObject(typeInfo string, t map[string]any, b *strings.Builder, ctx *tokenEstimateContext, deep int, maxDeep int) {
+func stringifyInputContentObject(typeInfo string, t map[string]any, b *strings.Builder, ctx *tokenEstimateContext) {
 	switch typeInfo {
 
 	case "input_text", "output_text": // Text content.

@@ -71,62 +71,59 @@ type geminiSSEToChatState struct {
 
 func (s *geminiSSEToChatState) handlePayload(payload []byte) error {
 	var root apitypes.GenerateContentStreamResponse
-	if err := json.Unmarshal(payload, &root); err != nil {
-		return nil
-	}
-	if m := strings.TrimSpace(root.ModelVersion); m != "" {
-		s.model = m
-	} else if m := strings.TrimSpace(root.Model); m != "" {
-		s.model = m
-	}
-
-	if len(root.Candidates) > 0 {
-		choices := make([]any, 0, len(root.Candidates))
-		for i, cand := range root.Candidates {
-			idx := cand.Index
-			if idx < 0 {
-				idx = i
-			}
-			content, toolCalls := geminiPartsToContentAndToolCalls(cand.Content.Parts)
-			delta := apitypes.JSONObject{
-				"role": openAIRoleAssistant,
-			}
-			if content != "" {
-				delta["content"] = content
-			}
-			if len(toolCalls) > 0 {
-				delta["tool_calls"] = toolCalls
-			}
-			finish := strings.TrimSpace(cand.FinishReason)
-			if len(delta) == 1 && finish == "" {
-				continue
-			}
-			choice := apitypes.JSONObject{
-				"index": idx,
-				"delta": delta,
-			}
-			if finish != "" {
-				choice["finish_reason"] = finish
-			}
-			choices = append(choices, choice)
+	if json.Unmarshal(payload, &root) == nil {
+		if m := strings.TrimSpace(root.ModelVersion); m != "" {
+			s.model = m
+		} else if m := strings.TrimSpace(root.Model); m != "" {
+			s.model = m
 		}
-		if len(choices) > 0 {
-			chunk := apitypes.JSONObject{
-				"id":      s.chatID,
-				"object":  "chat.completion.chunk",
-				"created": s.created,
-				"choices": choices,
+
+		if len(root.Candidates) > 0 {
+			choices := make([]any, 0, len(root.Candidates))
+			for i, cand := range root.Candidates {
+				idx := cand.Index
+				if idx < 0 {
+					idx = i
+				}
+				content, toolCalls := geminiPartsToContentAndToolCalls(cand.Content.Parts)
+				delta := apitypes.JSONObject{
+					"role": openAIRoleAssistant,
+				}
+				if content != "" {
+					delta["content"] = content
+				}
+				if len(toolCalls) > 0 {
+					delta["tool_calls"] = toolCalls
+				}
+				finish := strings.TrimSpace(cand.FinishReason)
+				if len(delta) == 1 && finish == "" {
+					continue
+				}
+				choice := apitypes.JSONObject{
+					"index": idx,
+					"delta": delta,
+				}
+				if finish != "" {
+					choice["finish_reason"] = finish
+				}
+				choices = append(choices, choice)
 			}
-			if s.model != "" {
-				chunk["model"] = s.model
-			}
-			if usage, err := geminiUsageToChatChunkUsage(root.UsageMetadata); err != nil {
-				return err
-			} else if usage != nil {
-				chunk["usage"] = usage
-			}
-			if err := writeSSEDataJSON(s.w, chunk); err != nil {
-				return err
+			if len(choices) > 0 {
+				chunk := apitypes.JSONObject{
+					"id":      s.chatID,
+					"object":  "chat.completion.chunk",
+					"created": s.created,
+					"choices": choices,
+				}
+				if s.model != "" {
+					chunk["model"] = s.model
+				}
+				if usage := geminiUsageToChatChunkUsage(root.UsageMetadata); usage != nil {
+					chunk["usage"] = usage
+				}
+				if err := writeSSEDataJSON(s.w, chunk); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -186,9 +183,9 @@ func geminiPartsToContentAndToolCalls(parts []apitypes.Part) (string, []any) {
 	return b.String(), toolCalls
 }
 
-func geminiUsageToChatChunkUsage(usage *apitypes.UsageMetadata) (apitypes.JSONObject, error) {
+func geminiUsageToChatChunkUsage(usage *apitypes.UsageMetadata) apitypes.JSONObject {
 	if usage == nil {
-		return nil, nil
+		return nil
 	}
 	completionTokens := usage.TotalTokenCount - usage.PromptTokenCount
 	if completionTokens < 0 {
@@ -202,5 +199,5 @@ func geminiUsageToChatChunkUsage(usage *apitypes.UsageMetadata) (apitypes.JSONOb
 	out["completion_tokens_details"] = apitypes.JSONObject{
 		"reasoning_tokens": usage.ThoughtsTokenCount,
 	}
-	return out, nil
+	return out
 }

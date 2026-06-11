@@ -1543,7 +1543,7 @@ func TestExtractUsage_UsageRootMergesMultipleRoots(t *testing.T) {
 		},
 	}
 
-	usage, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	usage, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
 	}
@@ -1585,7 +1585,7 @@ func TestExtractUsage_UsageRootNestedMergeDoesNotOverwriteNonZero(t *testing.T) 
 		},
 	}
 
-	_, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	_, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
 	}
@@ -2185,7 +2185,7 @@ func TestExtractUsage_UsageFactEventFilter(t *testing.T) {
 		},
 	}
 
-	usage, cached, err := extractUsageFromRootsWithEvent(nil, "message_start", cfg, nil, root, nil, nil)
+	usage, cached, err := extractUsageFromRootsWithEvent(nil, "message_start", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent message_start: %v", err)
 	}
@@ -2202,7 +2202,7 @@ func TestExtractUsage_UsageFactEventFilter(t *testing.T) {
 		t.Fatalf("cached got %d want 0", got)
 	}
 
-	usage, _, err = extractUsageFromRootsWithEvent(nil, "message_delta", cfg, nil, root, nil, nil)
+	usage, _, err = extractUsageFromRootsWithEvent(nil, "message_delta", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent message_delta: %v", err)
 	}
@@ -2237,7 +2237,7 @@ func TestExtractUsage_UsageRootEventList(t *testing.T) {
 		},
 	}
 
-	usage, _, err := extractUsageFromRootsWithEvent(nil, "response.incomplete", cfg, nil, root, nil, nil)
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "response.incomplete", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
 	}
@@ -2251,7 +2251,7 @@ func TestExtractUsage_UsageRootEventList(t *testing.T) {
 		t.Fatalf("OutputTokens got %d want %d", got, want)
 	}
 
-	usage, _, err = extractUsageFromRootsWithEvent(nil, "response.created", cfg, nil, root, nil, nil)
+	usage, _, err = extractUsageFromRootsWithEvent(nil, "response.created", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent mismatch: %v", err)
 	}
@@ -2273,7 +2273,7 @@ func TestExtractUsage_UsageFactEventList(t *testing.T) {
 		},
 	}
 
-	usage, _, err := extractUsageFromRootsWithEvent(nil, "response.completed", cfg, nil, root, nil, nil)
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "response.completed", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
 	}
@@ -2298,7 +2298,7 @@ func TestExtractUsage_UsageFactEventOptionalFallsBackWhenEventMissing(t *testing
 		},
 	}
 
-	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent empty event: %v", err)
 	}
@@ -2309,7 +2309,7 @@ func TestExtractUsage_UsageFactEventOptionalFallsBackWhenEventMissing(t *testing
 		t.Fatalf("OutputTokens got %d want %d", got, want)
 	}
 
-	usage, _, err = extractUsageFromRootsWithEvent(nil, "message_start", cfg, nil, root, nil, nil)
+	usage, _, err = extractUsageFromRootsWithEvent(nil, "message_start", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent mismatched event: %v", err)
 	}
@@ -2332,7 +2332,7 @@ func TestExtractUsage_UsageFactEventOptionalFallback_DeduplicatesEquivalentRules
 		},
 	}
 
-	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent empty event: %v", err)
 	}
@@ -2360,7 +2360,7 @@ func TestExtractUsage_UsageFactEventRequiredDoesNotFallbackWhenEventMissing(t *t
 		},
 	}
 
-	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent empty event: %v", err)
 	}

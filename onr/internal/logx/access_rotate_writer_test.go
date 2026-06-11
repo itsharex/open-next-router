@@ -65,7 +65,7 @@ func TestAccessRotateWriterRotateBySize(t *testing.T) {
 		t.Fatalf("second write err=%v", err)
 	}
 
-	archives := listArchives(t, dir, "access.log")
+	archives := listArchives(t, dir)
 	if len(archives) != 1 {
 		t.Fatalf("expected 1 archive, got %d (%v)", len(archives), archives)
 	}
@@ -96,7 +96,7 @@ func TestAccessRotateWriterRotateByDay(t *testing.T) {
 		t.Fatalf("write day2 err=%v", err)
 	}
 
-	archives := listArchives(t, dir, "access.log")
+	archives := listArchives(t, dir)
 	if len(archives) != 1 {
 		t.Fatalf("expected 1 archive, got %d (%v)", len(archives), archives)
 	}
@@ -128,7 +128,7 @@ func TestAccessRotateWriterCleanupBackups(t *testing.T) {
 		}
 	}
 
-	archives := listArchives(t, dir, "access.log")
+	archives := listArchives(t, dir)
 	if len(archives) != 2 {
 		t.Fatalf("expected 2 archives after cleanup, got %d (%v)", len(archives), archives)
 	}
@@ -160,7 +160,7 @@ func TestAccessRotateWriterCleanupAge(t *testing.T) {
 		}
 	}
 
-	archives := listArchives(t, dir, "access.log")
+	archives := listArchives(t, dir)
 	if len(archives) != 3 {
 		t.Fatalf("expected 3 archives after age cleanup, got %d (%v)", len(archives), archives)
 	}
@@ -202,7 +202,7 @@ func TestAccessRotateWriterCompressArchive(t *testing.T) {
 		t.Fatalf("write day2 err=%v", err)
 	}
 
-	archives := listArchives(t, dir, "access.log")
+	archives := listArchives(t, dir)
 	if len(archives) != 1 {
 		t.Fatalf("expected 1 archive, got %d (%v)", len(archives), archives)
 	}
@@ -238,14 +238,14 @@ func TestAccessRotateWriterCompressArchive(t *testing.T) {
 	}
 }
 
-func listArchives(t *testing.T, dir string, base string) []string {
+func listArchives(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("ReadDir err=%v", err)
 	}
 	out := make([]string, 0)
-	prefix := base + "."
+	prefix := "access.log."
 	for _, ent := range entries {
 		if ent.IsDir() {
 			continue

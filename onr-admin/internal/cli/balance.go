@@ -149,7 +149,7 @@ func runBalanceGetWithOptions(opts balanceGetOptions) error {
 		result, qerr := balancequery.Query(ctx, balancequery.Params{
 			Provider: p,
 			File:     pf,
-			Meta: dslmeta.Meta{
+			Meta: &dslmeta.Meta{
 				API:      api,
 				IsStream: opts.stream,
 			},

@@ -37,7 +37,7 @@ func TestQueryCustom(t *testing.T) {
 				},
 			},
 		},
-		Meta:   dslmeta.Meta{API: "chat.completions"},
+		Meta:   &dslmeta.Meta{API: "chat.completions"},
 		APIKey: "sk-test",
 	})
 	if err != nil {
@@ -75,7 +75,7 @@ func TestQueryDebugOutput(t *testing.T) {
 				},
 			},
 		},
-		Meta:     dslmeta.Meta{API: "chat.completions"},
+		Meta:     &dslmeta.Meta{API: "chat.completions"},
 		APIKey:   "sk-test",
 		DebugOut: &debug,
 	})
@@ -115,7 +115,7 @@ func TestQueryOpenAI(t *testing.T) {
 				},
 			},
 		},
-		Meta:   dslmeta.Meta{API: "chat.completions"},
+		Meta:   &dslmeta.Meta{API: "chat.completions"},
 		APIKey: "sk-test",
 	})
 	if err != nil {
@@ -145,7 +145,7 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 				},
 			},
 		},
-		Meta:       dslmeta.Meta{API: "chat.completions"},
+		Meta:       &dslmeta.Meta{API: "chat.completions"},
 		APIKey:     "sk-test",
 		BaseURL:    "https://billing.example",
 		HTTPClient: fakeClient,

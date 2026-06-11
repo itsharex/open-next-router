@@ -1,7 +1,6 @@
 package dslconfig
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -309,10 +308,6 @@ func usageFactEventOptionalFallbackKey(fact usageFactConfig) string {
 	}, "\x1f")
 }
 
-func evaluateUsageFact(reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {
-	return evaluateUsageFactWithEvent("", reqRoot, respRoot, nil, derivedRoot, false, fact)
-}
-
 func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, usageRoot, derivedRoot map[string]any, usageRootConfigured bool, fact usageFactConfig) (quantity float64, matched bool) {
 	root := usageFactSourceRoot(reqRoot, respRoot, usageRoot, derivedRoot, fact.Source, usageRootConfigured)
 	if len(root) == 0 {
@@ -388,7 +383,7 @@ func matchesUsageFactFilter(v any, typ, status string) bool {
 	return true
 }
 
-func projectUsageFromFacts(facts []usageFactEval, usageRootConfigured bool) (*Usage, int, error) {
+func projectUsageFromFacts(facts []usageFactEval, usageRootConfigured bool) (*Usage, int) {
 	usage := &Usage{}
 	var cachedTokens int
 	var cacheWriteTokens int
@@ -422,51 +417,34 @@ func projectUsageFromFacts(facts []usageFactEval, usageRootConfigured bool) (*Us
 	}
 	usage.FlatFields = buildUsageFlatFields(facts)
 	usage.DebugFacts = buildUsageDebugFacts(facts, usageRootConfigured)
-	return usage, cachedTokens, nil
+	return usage, cachedTokens
 }
 
-func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
-	return extractCustomUsageWithEvent("", reqRoot, respRoot, derivedRoot, cfg)
-}
-
-func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int) {
 	evals := make([]usageFactEval, 0, len(cfg.facts))
 	usageRoot := extractUsageRootWithEvent(event, respRoot, cfg.usageRoots)
 	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, len(cfg.usageRoots) > 0, cfg.factGroups, len(cfg.facts))...)
 
-	usage, cachedTokens, err := projectUsageFromFacts(evals, len(cfg.usageRoots) > 0)
-	if err != nil {
-		return nil, 0, err
-	}
+	usage, cachedTokens := projectUsageFromFacts(evals, len(cfg.usageRoots) > 0)
 	if cfg.TotalTokensExpr != nil {
 		total := cfg.TotalTokensExpr.Eval(respRoot)
 		usage.TotalTokens = total
 	}
 	usage.UsageRoot = cloneUsageRootValue(usageRoot)
-	return usage, cachedTokens, nil
+	return usage, cachedTokens
 }
 
-func extractCustomUsageFromMergedUsageRoot(reqRoot, usageRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+func extractCustomUsageFromMergedUsageRoot(reqRoot, usageRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int) {
 	evals := make([]usageFactEval, 0, len(cfg.facts))
 	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent("", reqRoot, nil, usageRoot, derivedRoot, true, cfg.factGroups, len(cfg.facts))...)
 
-	usage, cachedTokens, err := projectUsageFromFacts(evals, true)
-	if err != nil {
-		return nil, 0, err
-	}
+	usage, cachedTokens := projectUsageFromFacts(evals, true)
 	// Stream final-stage facts already read from the merged usage root. Total is
 	// recomputed from projected input/output to avoid re-evaluating response-root
 	// expressions against the usage-root object.
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	usage.UsageRoot = cloneUsageRootValue(usageRoot)
-	return usage, cachedTokens, nil
-}
-
-func appendUsageFactErrorPrefix(err error, fact usageFactConfig) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("usage_fact %s %s: %w", strings.TrimSpace(fact.Dimension), strings.TrimSpace(fact.Unit), err)
+	return usage, cachedTokens
 }
 
 func buildUsageFlatFields(facts []usageFactEval) map[string]any {

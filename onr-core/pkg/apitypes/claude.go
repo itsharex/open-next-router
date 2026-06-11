@@ -132,7 +132,7 @@ func (c *ClaudeContentSource) ToMap() (map[string]any, error) {
 }
 
 type ClaudeUnknownSource struct {
-	ClaudeBaseSource        // carries the raw type string for any unrecognized source type
+	ClaudeBaseSource                 // carries the raw type string for any unrecognized source type
 	Raw              json.RawMessage `json:"-"`
 }
 
@@ -402,7 +402,7 @@ func (c *ClaudeCitationSearchResultLocation) ToMap() (map[string]any, error) {
 }
 
 type ClaudeUnknownCitation struct {
-	ClaudeBaseCitation        // carries the raw type string for any unrecognized citation type
+	ClaudeBaseCitation                 // carries the raw type string for any unrecognized citation type
 	Raw                json.RawMessage `json:"-"`
 }
 
@@ -476,7 +476,7 @@ func (c *ClaudeTextContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -538,7 +538,7 @@ func (c *ClaudeImageContent) FromMap(m map[string]any) error {
 		return err
 	}
 	c.Source = src
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	return err
 }
 
@@ -614,7 +614,7 @@ func (c *ClaudeDocumentContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -701,7 +701,7 @@ func (c *ClaudeSearchResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -828,7 +828,7 @@ func (c *ClaudeToolUseContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -913,7 +913,7 @@ func (c *ClaudeToolResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -966,7 +966,7 @@ func (c *ClaudeToolReferenceContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	return err
 }
 
@@ -1100,7 +1100,7 @@ func (c *ClaudeWebSearchToolResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -1200,7 +1200,7 @@ func (c *ClaudeWebFetchResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.Content, err = decodeClaudeContentMapField(m, "content")
+	c.Content, err = decodeClaudeContentMapField(m)
 	return err
 }
 
@@ -1248,7 +1248,7 @@ func (c *ClaudeWebFetchToolResultContent) FromMap(m map[string]any) error {
 		return err
 	}
 	var err error
-	c.Content, err = decodeClaudeContentMapField(m, "content")
+	c.Content, err = decodeClaudeContentMapField(m)
 	if err != nil {
 		return err
 	}
@@ -1256,7 +1256,7 @@ func (c *ClaudeWebFetchToolResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -1446,11 +1446,11 @@ func (c *ClaudeCodeExecutionToolResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
-	c.Content, err = decodeClaudeContentMapField(m, "content")
+	c.Content, err = decodeClaudeContentMapField(m)
 	return err
 }
 func (c *ClaudeCodeExecutionToolResultContent) ToMap() (map[string]any, error) {
@@ -1585,11 +1585,11 @@ func (c *ClaudeBashCodeExecutionToolResultContent) FromMap(m map[string]any) err
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
-	c.Content, err = decodeClaudeContentMapField(m, "content")
+	c.Content, err = decodeClaudeContentMapField(m)
 	return err
 }
 func (c *ClaudeBashCodeExecutionToolResultContent) ToMap() (map[string]any, error) {
@@ -1787,7 +1787,7 @@ func (c *ClaudeTextEditorCodeExecutionToolResultContent) FromMap(m map[string]an
 		return err
 	}
 	var err error
-	c.Content, err = decodeClaudeContentMapField(m, "content")
+	c.Content, err = decodeClaudeContentMapField(m)
 	if err != nil {
 		return err
 	}
@@ -1795,7 +1795,7 @@ func (c *ClaudeTextEditorCodeExecutionToolResultContent) FromMap(m map[string]an
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	return err
 }
 func (c *ClaudeTextEditorCodeExecutionToolResultContent) ToMap() (map[string]any, error) {
@@ -1889,7 +1889,7 @@ func (c *ClaudeToolSearchToolResultContent) FromMap(m map[string]any) error {
 		return err
 	}
 	var err error
-	c.Content, err = decodeClaudeContentMapField(m, "content")
+	c.Content, err = decodeClaudeContentMapField(m)
 	if err != nil {
 		return err
 	}
@@ -1897,7 +1897,7 @@ func (c *ClaudeToolSearchToolResultContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	return err
 }
 
@@ -1934,7 +1934,7 @@ func (c *ClaudeContainerUploadContent) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	return err
 }
 
@@ -1952,7 +1952,7 @@ func (c *ClaudeContainerUploadContent) ToMap() (map[string]any, error) {
 }
 
 type ClaudeUnknownContent struct {
-	ClaudeBaseContent        // carries the raw type string for any unrecognized content type
+	ClaudeBaseContent                 // carries the raw type string for any unrecognized content type
 	Raw               json.RawMessage `json:"-"`
 }
 
@@ -2108,7 +2108,7 @@ func (c *ClaudeTool) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -2369,7 +2369,7 @@ func (c *ThinkingConfigDisabled) FromMap(m map[string]any) error {
 func (c *ThinkingConfigDisabled) ToMap() (map[string]any, error) { return c.BaseThinkingConfig.ToMap() }
 
 type ThinkingConfigUnknown struct {
-	BaseThinkingConfig        // carries the raw type string for any unrecognized thinking config type
+	BaseThinkingConfig                 // carries the raw type string for any unrecognized thinking config type
 	Raw                json.RawMessage `json:"-"`
 }
 
@@ -2608,7 +2608,7 @@ func (c *ClaudeRequest) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	c.CacheControl, err = decodeCacheControlPtrFromMapField(m, "cache_control")
+	c.CacheControl, err = decodeCacheControlPtrFromMapField(m)
 	if err != nil {
 		return err
 	}
@@ -3043,7 +3043,8 @@ func (c *ClaudeResponse) ToMap() (map[string]any, error) {
 type ClaudeMessageRequest = ClaudeRequest
 type ClaudeMessageResponse = ClaudeResponse
 
-func decodeCacheControlPtrFromMapField(m map[string]any, key string) (*CacheControl, error) {
+func decodeCacheControlPtrFromMapField(m map[string]any) (*CacheControl, error) {
+	const key = "cache_control"
 	v, ok := mapValue(m, key)
 	if !ok || v == nil {
 		return nil, nil
@@ -3126,7 +3127,8 @@ func decodeClaudeCallerPtrFromMapField(m map[string]any, key string) (*ClaudeCal
 	return &out, out.FromMap(mv)
 }
 
-func decodeClaudeContentMapField(m map[string]any, key string) (ClaudeContent, error) {
+func decodeClaudeContentMapField(m map[string]any) (ClaudeContent, error) {
+	const key = "content"
 	v, ok := mapValue(m, key)
 	if !ok || v == nil {
 		return nil, nil

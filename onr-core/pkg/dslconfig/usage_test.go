@@ -393,7 +393,7 @@ func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact_StreamFinalResponse
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	u, _, err := extractUsageFromRootsWithEvent(meta, "response.completed", *cfg, nil, root, nil, resp)
+	u, _, err := extractUsageFromRootsWithEvent(meta, "response.completed", *cfg, nil, root, nil)
 	if err != nil {
 		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
 	}

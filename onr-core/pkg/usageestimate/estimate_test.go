@@ -331,7 +331,7 @@ func TestEstimate_WhenEstimationDisabled_ReturnsNilOnMissing(t *testing.T) {
 func TestEstimate_AnthropicStreamOutput(t *testing.T) {
 	cfg := &Config{}
 	ApplyDefaults(cfg)
-	streamTail := []byte(``)
+	var streamTail []byte
 	esc := `
 用户指出可能是 tool_use 而不是文本的问题。我已经看到了：
 1. 'meta.StreamText' 在 native_passthrough.go 中被追加文本内容

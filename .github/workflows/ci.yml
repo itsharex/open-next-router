@@ -7,6 +7,39 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Lint (${{ matrix.module.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: onr
+            path: .
+            go_mod: go.mod
+            config: .golangci.yml
+          - name: onr-core
+            path: onr-core
+            go_mod: onr-core/go.mod
+            config: ../.golangci.yml
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module.go_mod }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: ${{ matrix.module.path }}
+          args: --config=${{ matrix.module.config }} --timeout=3m
+
   test:
     name: Test (${{ matrix.module.name }})
     runs-on: ubuntu-latest

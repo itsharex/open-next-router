@@ -119,7 +119,7 @@ usage_mode "shared_tokens" {
 		t.Fatalf("Rewrite usage_modes.conf: %v", err)
 	}
 
-	logger, _ := newTestSystemLogger(t, "debug")
+	logger, _ := newTestSystemLogger(t)
 	res, err := reloadProvidersRuntime(&config.Config{}, reg, logger)
 	if err != nil {
 		t.Fatalf("reloadProvidersRuntime: %v", err)

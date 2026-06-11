@@ -20,7 +20,7 @@ import (
 type Params struct {
 	Provider string
 	File     dslconfig.ProviderFile
-	Meta     dslmeta.Meta
+	Meta     *dslmeta.Meta
 	BaseURL  string
 	APIKey   string
 
@@ -58,7 +58,23 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		return Result{}, errors.New("api key is empty")
 	}
 
-	meta := p.Meta
+	meta := dslmeta.Meta{}
+	if p.Meta != nil {
+		meta.API = p.Meta.API
+		meta.IsStream = p.Meta.IsStream
+		meta.BaseURL = p.Meta.BaseURL
+		meta.APIKey = p.Meta.APIKey
+		meta.OAuthAccessToken = p.Meta.OAuthAccessToken
+		meta.OAuthCacheKey = p.Meta.OAuthCacheKey
+		meta.OriginModelName = p.Meta.OriginModelName
+		meta.DSLModelMapped = p.Meta.DSLModelMapped
+		meta.RequestURLPath = p.Meta.RequestURLPath
+		meta.RequestContentType = p.Meta.RequestContentType
+		meta.RequestBody = p.Meta.RequestBody
+		meta.RequestHeaders = p.Meta.RequestHeaders
+		meta.DerivedUsage = p.Meta.DerivedUsage
+		meta.StartTime = p.Meta.StartTime
+	}
 	meta.API = strings.TrimSpace(meta.API)
 	if meta.API == "" {
 		return Result{}, errors.New("meta.api is empty")

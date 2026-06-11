@@ -105,17 +105,6 @@ func boolValue(m map[string]any, key string) (bool, error) {
 	return b, nil
 }
 
-func stringPtrValue(m map[string]any, key string) (*string, error) {
-	if _, ok := m[key]; !ok || m[key] == nil {
-		return nil, nil
-	}
-	v, err := stringValue(m, key)
-	if err != nil {
-		return nil, err
-	}
-	return &v, nil
-}
-
 func intPtrValue(m map[string]any, key string) (*int, error) {
 	if _, ok := m[key]; !ok || m[key] == nil {
 		return nil, nil
@@ -327,11 +316,5 @@ func setMapStringSlice(out map[string]any, key string, value []string) {
 			items = append(items, item)
 		}
 		out[key] = items
-	}
-}
-
-func setMapAnySlice(out map[string]any, key string, value []any) {
-	if len(value) > 0 {
-		out[key] = value
 	}
 }

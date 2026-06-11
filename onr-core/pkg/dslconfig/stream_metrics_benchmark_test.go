@@ -30,9 +30,7 @@ func BenchmarkStreamMetricsAggregator_OpenAIEvent_Old(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
-		if err := benchmarkLegacyOnSSEDataJSON(agg, payload); err != nil {
-			b.Fatalf("benchmarkLegacyOnSSEDataJSON: %v", err)
-		}
+		benchmarkLegacyOnSSEDataJSON(agg, payload)
 	}
 }
 
@@ -58,9 +56,7 @@ func BenchmarkStreamMetricsAggregator_AnthropicEvent_Old(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
-		if err := benchmarkLegacyOnSSEDataJSON(agg, payload); err != nil {
-			b.Fatalf("benchmarkLegacyOnSSEDataJSON: %v", err)
-		}
+		benchmarkLegacyOnSSEDataJSON(agg, payload)
 	}
 }
 
@@ -112,9 +108,7 @@ func BenchmarkStreamMetricsAggregator_CustomLegacyEvent_Old(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		agg := NewStreamMetricsAggregator(meta, &usageCfg, finishCfg)
-		if err := benchmarkLegacyOnSSEDataJSON(agg, payload); err != nil {
-			b.Fatalf("benchmarkLegacyOnSSEDataJSON: %v", err)
-		}
+		benchmarkLegacyOnSSEDataJSON(agg, payload)
 	}
 }
 
@@ -174,10 +168,10 @@ func BenchmarkStreamMetricsAggregator_UsageRootFinalManyChunks(b *testing.B) {
 }
 
 // benchmarkLegacyOnSSEDataJSON requires a valid StreamMetricsAggregator receiver.
-func benchmarkLegacyOnSSEDataJSON(a *StreamMetricsAggregator, payload []byte) error {
+func benchmarkLegacyOnSSEDataJSON(a *StreamMetricsAggregator, payload []byte) {
 	payload = bytes.TrimSpace(payload)
 	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
-		return nil
+		return
 	}
 
 	if strings.TrimSpace(a.finishReason) == "" && (strings.TrimSpace(a.finishCfg.Mode) != "" || strings.TrimSpace(a.finishCfg.FinishReasonPath) != "") {
@@ -189,27 +183,24 @@ func benchmarkLegacyOnSSEDataJSON(a *StreamMetricsAggregator, payload []byte) er
 	}
 
 	if strings.TrimSpace(a.usageCfg.Mode) == "" {
-		return nil
+		return
 	}
 
-	u, cachedTokens, err := ExtractUsage(a.meta, a.usageCfg, payload)
-	if err != nil {
-		return nil
+	if u, cachedTokens, err := ExtractUsage(a.meta, a.usageCfg, payload); err == nil {
+		if u == nil || isAllZeroUsage(u) {
+			return
+		}
+		if a.lastUsage == nil {
+			a.lastUsage = u
+		} else {
+			mergeUsagePreferNonZero(a.lastUsage, u)
+		}
+		if cachedTokens > 0 {
+			a.lastCachedTokens = cachedTokens
+		}
+		if a.usageCfg != nil && shouldRecomputeMergedTotal(*a.usageCfg) && a.lastUsage != nil {
+			normalizeUsageFields(a.lastUsage)
+			a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
+		}
 	}
-	if u == nil || isAllZeroUsage(u) {
-		return nil
-	}
-	if a.lastUsage == nil {
-		a.lastUsage = u
-	} else {
-		mergeUsagePreferNonZero(a.lastUsage, u)
-	}
-	if cachedTokens > 0 {
-		a.lastCachedTokens = cachedTokens
-	}
-	if a.usageCfg != nil && shouldRecomputeMergedTotal(*a.usageCfg) && a.lastUsage != nil {
-		normalizeUsageFields(a.lastUsage)
-		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
-	}
-	return nil
 }

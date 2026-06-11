@@ -518,7 +518,7 @@ func parseJSONSetHeaderValuesStmt(s *scanner, t *RequestTransform) error {
 		case tokEOF:
 			return s.errAt(tok, "unexpected EOF in json_set_header_values")
 		case tokSemicolon:
-			op, err := buildJSONSetHeaderValuesOp(s, pathTok, path, headerName, args)
+			op, err := buildJSONSetHeaderValuesOp(s, path, headerName, args)
 			if err != nil {
 				return err
 			}
@@ -530,7 +530,7 @@ func parseJSONSetHeaderValuesStmt(s *scanner, t *RequestTransform) error {
 	}
 }
 
-func buildJSONSetHeaderValuesOp(s *scanner, pathTok token, path string, headerName string, args []token) (JSONOp, error) {
+func buildJSONSetHeaderValuesOp(s *scanner, path string, headerName string, args []token) (JSONOp, error) {
 	op := JSONOp{
 		Op:         jsonOpSetHeaderVals,
 		Path:       strings.TrimSpace(path),

@@ -192,16 +192,14 @@ func (h *finishReasonSSEHandler) OnSSEEventDataJSON(event string, payload []byte
 		return nil
 	}
 
-	var root map[string]any
-	if err := json.Unmarshal(payload, &root); err != nil || root == nil {
+	root, ok := parseJSONObject(payload)
+	if !ok {
 		return nil
 	}
 
-	v, err := extractFinishReasonFromRootWithEvent(h.meta, h.cfg, event, root)
-	if err != nil {
-		return nil
+	if v, err := extractFinishReasonFromRootWithEvent(h.meta, h.cfg, event, root); err == nil {
+		h.finishReason = strings.TrimSpace(v)
 	}
-	h.finishReason = strings.TrimSpace(v)
 	return nil
 }
 

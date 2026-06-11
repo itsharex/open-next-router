@@ -157,16 +157,14 @@ func FindDumpByRequestID(opts DumpFindOptions) (DumpSummary, bool, error) {
 		if err != nil {
 			return err
 		}
-		sum, err := ParseDumpSummary(path, info)
-		if err != nil {
-			return nil
-		}
-		if strings.TrimSpace(sum.RequestID) != rid {
-			return nil
-		}
-		if !found || isDumpSummaryNewer(sum, matched) {
-			matched = sum
-			found = true
+		if sum, ok := parseDumpSummary(path, info); ok {
+			if strings.TrimSpace(sum.RequestID) != rid {
+				return nil
+			}
+			if !found || isDumpSummaryNewer(sum, matched) {
+				matched = sum
+				found = true
+			}
 		}
 		return nil
 	}); err != nil {
@@ -189,17 +187,23 @@ func parseDumpSummaryIfExists(path string) (DumpSummary, bool, error) {
 	if info.IsDir() {
 		return DumpSummary{}, false, nil
 	}
+	if sum, ok := parseDumpSummary(path, info); ok {
+		return sum, true, nil
+	}
+	return DumpSummary{
+		Path:     path,
+		FileName: info.Name(),
+		ModTime:  info.ModTime(),
+		Size:     info.Size(),
+	}, true, nil
+}
+
+func parseDumpSummary(path string, info os.FileInfo) (DumpSummary, bool) {
 	sum, err := ParseDumpSummary(path, info)
 	if err != nil {
-		// Best-effort fallback for malformed files.
-		return DumpSummary{
-			Path:     path,
-			FileName: info.Name(),
-			ModTime:  info.ModTime(),
-			Size:     info.Size(),
-		}, true, nil
+		return DumpSummary{}, false
 	}
-	return sum, true, nil
+	return sum, true
 }
 
 func isSafeDumpRequestIDPathPart(v string) bool {

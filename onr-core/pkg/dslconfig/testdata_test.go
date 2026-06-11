@@ -8,17 +8,6 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
-func mustReadDSLConfigTestData(t *testing.T, rel string) []byte {
-	t.Helper()
-
-	path := filepath.Join("testdata", rel)
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read testdata %q: %v", path, err)
-	}
-	return b
-}
-
 func mustReadSharedTestData(t *testing.T, rel string) []byte {
 	t.Helper()
 

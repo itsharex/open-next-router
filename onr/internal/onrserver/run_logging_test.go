@@ -11,13 +11,13 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
-func newTestSystemLogger(t *testing.T, level string) (*logx.SystemLogger, *bytes.Buffer) {
+func newTestSystemLogger(t *testing.T) (*logx.SystemLogger, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
 	color := false
 	l, err := logx.NewSystemLoggerWithOptions(logx.SystemLoggerOptions{
 		Writer: &buf,
-		Level:  level,
+		Level:  "debug",
 		Color:  &color,
 	})
 	if err != nil {
@@ -27,7 +27,7 @@ func newTestSystemLogger(t *testing.T, level string) (*logx.SystemLogger, *bytes
 }
 
 func TestLogStartupSummary_ContainsRequiredFields(t *testing.T) {
-	l, out := newTestSystemLogger(t, "debug")
+	l, out := newTestSystemLogger(t)
 	l.SetNowFunc(func() time.Time { return time.Date(2026, 2, 27, 9, 0, 0, 0, time.UTC) })
 
 	cfg := &config.Config{}
@@ -80,7 +80,7 @@ func TestLogStartupSummary_ContainsRequiredFields(t *testing.T) {
 }
 
 func TestLogSkippedProviders_WarnCategory(t *testing.T) {
-	l, out := newTestSystemLogger(t, "debug")
+	l, out := newTestSystemLogger(t)
 	l.SetNowFunc(func() time.Time { return time.Date(2026, 2, 27, 9, 0, 0, 0, time.UTC) })
 
 	logSkippedProviders(
@@ -112,7 +112,7 @@ func TestLogSkippedProviders_WarnCategory(t *testing.T) {
 }
 
 func TestReloadLogs_CategoryAndSource(t *testing.T) {
-	l, out := newTestSystemLogger(t, "debug")
+	l, out := newTestSystemLogger(t)
 	l.SetNowFunc(func() time.Time { return time.Date(2026, 2, 27, 9, 0, 0, 0, time.UTC) })
 
 	cfg := &config.Config{}

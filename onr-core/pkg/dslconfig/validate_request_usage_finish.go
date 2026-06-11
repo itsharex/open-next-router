@@ -280,16 +280,6 @@ func hasAnyUsageExtractionRule(cfg UsageExtractConfig) bool {
 		len(cfg.facts) > 0
 }
 
-func hasUsageFactForKey(cfg UsageExtractConfig, dim, unit string) bool {
-	key := normalizeUsageFactKey(dim, unit)
-	for _, fact := range cfg.facts {
-		if normalizeUsageFactKey(fact.Dimension, fact.Unit) == key {
-			return true
-		}
-	}
-	return false
-}
-
 func validateUsageFactConfig(path, providerName, scope string, idx int, fact usageFactConfig) error {
 	key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
 	if !usageFactKeyAllowed(key.Dimension, key.Unit) {

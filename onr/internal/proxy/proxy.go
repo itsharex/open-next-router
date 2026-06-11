@@ -711,10 +711,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 
 	respDir, _ := pf.Response.Select(m)
 
-	reqTransform, hasReqTransform, err := selectRequestTransform(pf, m)
-	if err != nil {
-		return nil, err
-	}
+	reqTransform, hasReqTransform := selectRequestTransform(pf, m)
 	applyGeminiModelRewrite(api, m)
 
 	reqResult, err := applyRequestTransform(m, gc.Request.Header.Get("Content-Type"), gc.GetHeader("Content-Encoding"), bodyBytes, root, reqTransform, hasReqTransform)
@@ -795,14 +792,14 @@ func allowNonJSONRequestBodyAPI(api string) bool {
 }
 
 // selectRequestTransform requires a non-nil meta.
-func selectRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta) (*dslconfig.RequestTransform, bool, error) {
+func selectRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta) (*dslconfig.RequestTransform, bool) {
 	t, ok := pf.Request.Select(meta)
 	if !ok {
-		return nil, false, nil
+		return nil, false
 	}
 
 	t.Apply(meta)
-	return t, true, nil
+	return t, true
 }
 
 // applyGeminiModelRewrite requires a non-nil meta.

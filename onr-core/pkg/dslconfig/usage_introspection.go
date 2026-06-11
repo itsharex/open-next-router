@@ -41,11 +41,7 @@ func cloneUsageRootsForIntrospection(roots []usageRootConfig) []UsageRoot {
 	}
 	out := make([]UsageRoot, 0, len(roots))
 	for _, root := range roots {
-		out = append(out, UsageRoot{
-			Path:          root.Path,
-			Event:         root.Event,
-			EventOptional: root.EventOptional,
-		})
+		out = append(out, UsageRoot(root))
 	}
 	return out
 }

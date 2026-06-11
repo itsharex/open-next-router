@@ -2,7 +2,6 @@ package dslconfig
 
 import (
 	"bytes"
-	"encoding/json"
 	"slices"
 	"strings"
 
@@ -40,7 +39,7 @@ type StreamMetricsAggregator struct {
 	finishReason string
 }
 
-type streamUsageExtractFunc func(event string, respRoot map[string]any, respBody []byte) (*Usage, int, error)
+type streamUsageExtractFunc func(event string, respRoot map[string]any) (*Usage, int, error)
 
 // NewStreamMetricsAggregator returns a non-nil aggregator.
 func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg *UsageExtractConfig, finishCfg *FinishReasonExtractConfig) *StreamMetricsAggregator {
@@ -78,8 +77,8 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 		return nil
 	}
 
-	var root map[string]any
-	if err := json.Unmarshal(payload, &root); err != nil || root == nil {
+	root, ok := parseJSONObject(payload)
+	if !ok {
 		return nil
 	}
 
@@ -101,30 +100,27 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 	}
 	a.mergeUsageRootForEvent(event, root)
 
-	u, cachedTokens, err := a.extract(event, root, payload)
-	if err != nil {
-		// ignore individual event errors
-		return nil
-	}
-	if u == nil || isAllZeroUsage(u) {
-		return nil
-	}
-	a.recordFreshInputTokens(u)
-	// Merge semantics: do not allow 0 to overwrite a previously known value.
-	if a.lastUsage == nil {
-		a.lastUsage = u
-	} else {
-		mergeUsagePreferNonZero(a.lastUsage, u)
-	}
-	a.recomputeMergedInputTokens()
-	if cachedTokens > 0 {
-		a.lastCachedTokens = cachedTokens
-	}
-	// For anthropic/custom split-stream usage, recompute total from the merged fields unless
-	// custom mode explicitly provides TotalTokensExpr.
-	if shouldRecomputeMergedTotal(*a.usageCfg) && a.lastUsage != nil {
-		normalizeUsageFields(a.lastUsage)
-		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
+	if u, cachedTokens, err := a.extract(event, root); err == nil {
+		if u == nil || isAllZeroUsage(u) {
+			return nil
+		}
+		a.recordFreshInputTokens(u)
+		// Merge semantics: do not allow 0 to overwrite a previously known value.
+		if a.lastUsage == nil {
+			a.lastUsage = u
+		} else {
+			mergeUsagePreferNonZero(a.lastUsage, u)
+		}
+		a.recomputeMergedInputTokens()
+		if cachedTokens > 0 {
+			a.lastCachedTokens = cachedTokens
+		}
+		// For anthropic/custom split-stream usage, recompute total from the merged fields unless
+		// custom mode explicitly provides TotalTokensExpr.
+		if shouldRecomputeMergedTotal(*a.usageCfg) && a.lastUsage != nil {
+			normalizeUsageFields(a.lastUsage)
+			a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
+		}
 	}
 	return nil
 }
@@ -180,8 +176,8 @@ func (a *StreamMetricsAggregator) applyFinalUsageFacts() {
 	}
 	reqRoot := requestRootFromMeta(a.meta)
 	derivedRoot := derivedRootFromMeta(a.meta)
-	u, cachedTokens, err := extractCustomUsageFromMergedUsageRoot(reqRoot, a.mergedUsageRoot, derivedRoot, *a.finalCfg)
-	if err != nil || u == nil || isAllZeroUsage(u) {
+	u, cachedTokens := extractCustomUsageFromMergedUsageRoot(reqRoot, a.mergedUsageRoot, derivedRoot, *a.finalCfg)
+	if u == nil || isAllZeroUsage(u) {
 		return
 	}
 	a.recordFreshInputTokens(u)
@@ -356,15 +352,15 @@ func splitStreamUsageConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) (UsageEx
 
 func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg *UsageExtractConfig) streamUsageExtractFunc {
 	if cfg == nil {
-		return func(string, map[string]any, []byte) (*Usage, int, error) {
+		return func(string, map[string]any) (*Usage, int, error) {
 			return nil, 0, nil
 		}
 	}
 	compiled := compileUsageExtractConfig(meta, *cfg)
-	return func(event string, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	return func(event string, respRoot map[string]any) (*Usage, int, error) {
 		reqRoot := requestRootFromMeta(meta)
 		derivedRoot := derivedRootFromMeta(meta)
-		return extractUsageFromRootsWithEvent(meta, event, compiled, reqRoot, respRoot, derivedRoot, respBody)
+		return extractUsageFromRootsWithEvent(meta, event, compiled, reqRoot, respRoot, derivedRoot)
 	}
 }
 

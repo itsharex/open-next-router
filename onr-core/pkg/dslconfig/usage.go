@@ -103,6 +103,7 @@ func ExtractUsageObject(meta *dslmeta.Meta, cfg *UsageExtractConfig, root map[st
 }
 
 func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	_ = respBody
 	cfg = prepareUsageExtractConfig(cfg)
 	mode := normalizeUsageMode(cfg.Mode)
 	if mode == "" {
@@ -110,18 +111,15 @@ func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, re
 	}
 	reqRoot := requestRootFromMeta(meta)
 	derivedRoot := derivedRootFromMeta(meta)
-	return extractUsageFromRootsWithEvent(meta, "", cfg, reqRoot, respRoot, derivedRoot, respBody)
+	return extractUsageFromRootsWithEvent(meta, "", cfg, reqRoot, respRoot, derivedRoot)
 }
 
-func extractUsageFromRootsWithEvent(meta *dslmeta.Meta, event string, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
+func extractUsageFromRootsWithEvent(meta *dslmeta.Meta, event string, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any) (*Usage, int, error) {
 	cfg = compileUsageExtractConfig(meta, cfg)
 	mode := normalizeUsageMode(cfg.Mode)
 	switch mode {
 	case usageModeCustom:
-		usage, cachedTokens, err := extractCustomUsageWithEvent(event, reqRoot, respRoot, derivedRoot, cfg)
-		if err != nil {
-			return nil, 0, err
-		}
+		usage, cachedTokens := extractCustomUsageWithEvent(event, reqRoot, respRoot, derivedRoot, cfg)
 		return usage, cachedTokens, nil
 	default:
 		return nil, 0, fmt.Errorf("unsupported usage_extract mode %q", cfg.Mode)
@@ -178,10 +176,10 @@ func compileUsageExtractConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) Usage
 	_ = meta
 	cfg = prepareUsageExtractConfig(cfg)
 	mode := normalizeUsageMode(cfg.Mode)
-	switch {
-	case mode == "":
+	switch mode {
+	case "":
 		return cfg
-	case mode == usageModeCustom:
+	case usageModeCustom:
 		compiled := UsageExtractConfig{
 			Mode:            usageModeCustom,
 			TotalTokensExpr: cfg.TotalTokensExpr,

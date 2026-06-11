@@ -391,10 +391,7 @@ func convertOpenAIChatMessages(messages []apitypes.OpenAIChatMessage) ([]apitype
 		case "system", "developer":
 			system = append(system, extractSystemBlocks(msg)...)
 		case "tool":
-			content, err := buildClaudeToolResults(msg)
-			if err != nil {
-				return nil, nil, err
-			}
+			content := buildClaudeToolResults(msg)
 			if len(content) == 0 {
 				continue
 			}
@@ -466,10 +463,10 @@ func buildClaudeMessageContent(msg apitypes.OpenAIChatMessage) ([]apitypes.Claud
 	return content, nil
 }
 
-func buildClaudeToolResults(msg apitypes.OpenAIChatMessage) ([]apitypes.ClaudeContent, error) {
+func buildClaudeToolResults(msg apitypes.OpenAIChatMessage) []apitypes.ClaudeContent {
 	blocks := buildClaudeTextBlocks(msg.Content)
 	if len(blocks) == 0 {
-		return nil, nil
+		return nil
 	}
 	content := make([]apitypes.ClaudeContent, 0, len(blocks))
 	for _, block := range blocks {
@@ -483,7 +480,7 @@ func buildClaudeToolResults(msg apitypes.OpenAIChatMessage) ([]apitypes.ClaudeCo
 			Content:           textBlock.Text,
 		})
 	}
-	return content, nil
+	return content
 }
 
 func buildClaudeTextBlocks(content *apitypes.OpenAIChatMessageContent) []apitypes.ClaudeContent {

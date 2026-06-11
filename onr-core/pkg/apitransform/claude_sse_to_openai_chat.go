@@ -66,29 +66,26 @@ type claudeSSEToChatState struct {
 // handleEvent requires a non-nil transform state and non-nil parsed SSE event.
 func (s *claudeSSEToChatState) handleEvent(ev *sseEvent) error {
 	var msg apitypes.ClaudeStreamMessage
-	if err := json.Unmarshal(ev.Data, &msg); err != nil {
-		return nil
-	}
+	if json.Unmarshal(ev.Data, &msg) == nil {
+		eventName := strings.ToLower(ev.Event)
+		if eventName == "" {
+			eventName = strings.ToLower(strings.TrimSpace(msg.Type))
+		}
 
-	eventName := strings.ToLower(ev.Event)
-	if eventName == "" {
-		eventName = strings.ToLower(strings.TrimSpace(msg.Type))
+		switch eventName {
+		case "message_start":
+			return s.handleMessageStart(&msg)
+		case "content_block_start":
+			return s.handleContentBlockStart(&msg)
+		case "content_block_delta":
+			return s.handleContentBlockDelta(&msg)
+		case "message_delta":
+			return s.handleMessageDelta(&msg)
+		case "message_stop":
+			return s.emitDone()
+		}
 	}
-
-	switch eventName {
-	case "message_start":
-		return s.handleMessageStart(&msg)
-	case "content_block_start":
-		return s.handleContentBlockStart(&msg)
-	case "content_block_delta":
-		return s.handleContentBlockDelta(&msg)
-	case "message_delta":
-		return s.handleMessageDelta(&msg)
-	case "message_stop":
-		return s.emitDone()
-	default:
-		return nil
-	}
+	return nil
 }
 
 func (s *claudeSSEToChatState) handleMessageStart(msg *apitypes.ClaudeStreamMessage) error {

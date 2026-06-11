@@ -101,7 +101,9 @@ func benchmarkLegacyParseMultipartRequestRoot(body []byte, contentType string) m
 	if err != nil {
 		return nil
 	}
-	defer form.RemoveAll()
+	defer func() {
+		_ = form.RemoveAll()
+	}()
 
 	root := make(map[string]any)
 	for k, vals := range form.Value {
