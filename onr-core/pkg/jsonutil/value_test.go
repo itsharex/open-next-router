@@ -1,6 +1,9 @@
 package jsonutil
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestGetIntByPath_SupportsWildcardAndIndex(t *testing.T) {
 	root := map[string]any{
@@ -95,6 +98,33 @@ func TestGetFloatByPath_StringAndNumber(t *testing.T) {
 	}
 	if got := GetFloatByPath(root, "$.usage.b"); got != 2.5 {
 		t.Fatalf("string float got %v, want 2.5", got)
+	}
+}
+
+func TestCoerceFloatOK(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want float64
+		ok   bool
+	}{
+		{name: "zero", in: 0, want: 0, ok: true},
+		{name: "float", in: 1.5, want: 1.5, ok: true},
+		{name: "int8", in: int8(2), want: 2, ok: true},
+		{name: "uint64", in: uint64(3), want: 3, ok: true},
+		{name: "json number", in: json.Number("4.5"), want: 4.5, ok: true},
+		{name: "string", in: "5.5", want: 5.5, ok: true},
+		{name: "empty string", in: "", want: 0, ok: false},
+		{name: "non numeric", in: map[string]any{}, want: 0, ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := CoerceFloatOK(tt.in)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("CoerceFloatOK(%T) got (%v, %v), want (%v, %v)", tt.in, got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }
 

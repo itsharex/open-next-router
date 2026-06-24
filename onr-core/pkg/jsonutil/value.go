@@ -87,30 +87,50 @@ func GetFirstIntByPaths(root map[string]any, paths ...string) int {
 
 // CoerceFloat converts common numeric-like values to float64.
 func CoerceFloat(v any) float64 {
+	f, _ := CoerceFloatOK(v)
+	return f
+}
+
+// CoerceFloatOK converts common numeric-like values to float64 and reports success.
+func CoerceFloatOK(v any) (float64, bool) {
 	switch t := v.(type) {
 	case float64:
-		return t
+		return t, true
 	case float32:
-		return float64(t)
+		return float64(t), true
 	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
+		return float64(t), true
+	case int8:
+		return float64(t), true
+	case int16:
+		return float64(t), true
 	case int32:
-		return float64(t)
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case uint:
+		return float64(t), true
+	case uint8:
+		return float64(t), true
+	case uint16:
+		return float64(t), true
+	case uint32:
+		return float64(t), true
+	case uint64:
+		return float64(t), true
 	case json.Number:
 		if f, err := t.Float64(); err == nil {
-			return f
+			return f, true
 		}
 		if i, err := t.Int64(); err == nil {
-			return float64(i)
+			return float64(i), true
 		}
 	case string:
 		if f, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil {
-			return f
+			return f, true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 // GetIntByPath reads integer values from a restricted JSONPath subset and sums matched values.

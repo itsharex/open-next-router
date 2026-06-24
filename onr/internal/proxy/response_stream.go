@@ -9,6 +9,7 @@ import (
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 )
 
@@ -124,7 +125,7 @@ func streamPerfMetrics(start time.Time, firstWriteAt time.Time, usage map[string
 	if ttftMs < 0 {
 		ttftMs = 0
 	}
-	outputTokens, ok := numberAsFloat64(usage["output_tokens"])
+	outputTokens, ok := jsonutil.CoerceFloatOK(usage["output_tokens"])
 	if !ok || outputTokens <= 0 {
 		return ttftMs, 0
 	}
