@@ -42,7 +42,7 @@ func (c *Client) handleNonStreamResponse(
 	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 		ct := strings.ToLower(resp.Header.Get("Content-Type"))
 		limited, truncated := trafficdump.LimitBytes(respBody, rec.MaxBytes())
-		binary := isBinaryDumpPayload(ct, limited)
+		binary := trafficdump.IsBinaryPayload(ct, limited)
 		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
 	}
 
@@ -103,7 +103,7 @@ func (c *Client) handleNonStreamResponse(
 	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 		ct := strings.ToLower(outCT)
 		limited, truncated := trafficdump.LimitBytes(respOutBody, rec.MaxBytes())
-		binary := isBinaryDumpPayload(ct, limited)
+		binary := trafficdump.IsBinaryPayload(ct, limited)
 		trafficdump.AppendProxyResponse(gc, limited, binary, truncated, resp.StatusCode)
 	}
 

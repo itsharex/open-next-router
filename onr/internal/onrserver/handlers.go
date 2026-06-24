@@ -44,9 +44,8 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			if c.Request != nil {
 				ct = c.Request.Header.Get("Content-Type")
 			}
-			lct := strings.ToLower(ct)
-			binary := !strings.Contains(lct, "json") && !strings.HasPrefix(lct, "text/")
 			limited, truncated := trafficdump.LimitBytes(bodyBytes, rec.MaxBytes())
+			binary := trafficdump.IsBinaryPayload(ct, limited)
 			trafficdump.AppendOriginRequest(c, limited, binary, truncated)
 		}
 

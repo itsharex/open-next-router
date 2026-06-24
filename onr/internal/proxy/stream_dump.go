@@ -60,14 +60,14 @@ func (d *streamDumpState) Append(gc *gin.Context, resp *http.Response) {
 	// Always write response sections once (even if body is empty), to make dumps debuggable.
 	// Note: stream bytes might be partial when the client disconnects.
 	ctUp := strings.ToLower(resp.Header.Get("Content-Type"))
-	upBinary := isBinaryDumpPayload(ctUp, d.upBuf)
+	upBinary := trafficdump.IsBinaryPayload(ctUp, d.upBuf)
 	trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, d.upBuf, upBinary, d.upTr)
 
 	ctPr := strings.ToLower(gc.Writer.Header().Get("Content-Type"))
 	if strings.TrimSpace(ctPr) == "" {
 		ctPr = ctUp
 	}
-	prBinary := isBinaryDumpPayload(ctPr, d.prBuf)
+	prBinary := trafficdump.IsBinaryPayload(ctPr, d.prBuf)
 	trafficdump.AppendProxyResponse(gc, d.prBuf, prBinary, d.prTr, resp.StatusCode)
 	trafficdump.AppendStreamSummary(gc, d.streamBytes, d.streamErrMsg, d.streamIgnoredClientDisconnect)
 	d.appended = true
