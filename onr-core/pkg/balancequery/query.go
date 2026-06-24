@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslquery"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/httpclient"
 )
 
@@ -92,7 +91,7 @@ func Query(ctx context.Context, p Params) (Result, error) {
 
 	baseURL := strings.TrimSpace(p.BaseURL)
 	if baseURL == "" {
-		baseURL = resolveBaseURLFromExpr(p.File.Routing.BaseURLExpr)
+		baseURL = dslquery.ResolveBaseURLFromExpr(p.File.Routing.BaseURLExpr)
 	}
 	if baseURL == "" {
 		return Result{}, errors.New("base url is empty")
@@ -101,7 +100,7 @@ func Query(ctx context.Context, p Params) (Result, error) {
 
 	headers := make(http.Header)
 	p.File.Headers.Apply(&meta, nil, headers)
-	applyHeaderOps(headers, cfgBalance.Headers, &meta)
+	dslquery.ApplyHeaderOps(headers, cfgBalance.Headers, &meta)
 
 	client := p.HTTPClient
 	if client == nil {
@@ -144,11 +143,11 @@ func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL
 	if method == "" {
 		method = http.MethodGet
 	}
-	reqURL, err := buildBalanceRequestURL(baseURL, "", dslconfig.EvalStringExpr(cfg.Path, meta))
+	reqURL, err := dslquery.BuildRequestURL(baseURL, "", dslconfig.EvalStringExpr(cfg.Path, meta), "balance")
 	if err != nil {
 		return 0, nil, err
 	}
-	body, err := getResponseBody(ctx, client, method, reqURL, headers, debugOut)
+	body, err := dslquery.GetResponseBody(ctx, client, method, reqURL, headers, debugOut)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -156,15 +155,15 @@ func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL
 }
 
 func queryOpenAIBalanceWithPaths(ctx context.Context, client httpclient.HTTPDoer, baseURL, apiKey, subscriptionPath, usagePath string, baseHeaders http.Header, meta *dslmeta.Meta, debugOut io.Writer) (float64, *float64, error) {
-	subURL, err := buildBalanceRequestURL(baseURL, "/v1/dashboard/billing/subscription", dslconfig.EvalStringExpr(subscriptionPath, meta))
+	subURL, err := dslquery.BuildRequestURL(baseURL, "/v1/dashboard/billing/subscription", dslconfig.EvalStringExpr(subscriptionPath, meta), "balance")
 	if err != nil {
 		return 0, nil, err
 	}
-	subHeaders := cloneHeaders(baseHeaders)
+	subHeaders := dslquery.CloneHeaders(baseHeaders)
 	if strings.TrimSpace(subHeaders.Get("Authorization")) == "" {
 		subHeaders.Set("Authorization", "Bearer "+apiKey)
 	}
-	body, err := getResponseBody(ctx, client, http.MethodGet, subURL, subHeaders, debugOut)
+	body, err := dslquery.GetResponseBody(ctx, client, http.MethodGet, subURL, subHeaders, debugOut)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -190,15 +189,15 @@ func queryOpenAIBalanceWithPaths(ctx context.Context, client httpclient.HTTPDoer
 	}
 	uPath = fmt.Sprintf("%s%vstart_date=%s&end_date=%s", uPath, sep, startDate, endDate)
 
-	usageURL, err := buildBalanceRequestURL(baseURL, "/v1/dashboard/billing/usage", uPath)
+	usageURL, err := dslquery.BuildRequestURL(baseURL, "/v1/dashboard/billing/usage", uPath, "balance")
 	if err != nil {
 		return 0, nil, err
 	}
-	usageHeaders := cloneHeaders(baseHeaders)
+	usageHeaders := dslquery.CloneHeaders(baseHeaders)
 	if strings.TrimSpace(usageHeaders.Get("Authorization")) == "" {
 		usageHeaders.Set("Authorization", "Bearer "+apiKey)
 	}
-	body, err = getResponseBody(ctx, client, http.MethodGet, usageURL, usageHeaders, debugOut)
+	body, err = dslquery.GetResponseBody(ctx, client, http.MethodGet, usageURL, usageHeaders, debugOut)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -210,100 +209,4 @@ func queryOpenAIBalanceWithPaths(ctx context.Context, client httpclient.HTTPDoer
 	balance := subscription.HardLimitUSD - usage.TotalUsage/100
 	used := usage.TotalUsage / 100
 	return balance, &used, nil
-}
-
-func getResponseBody(ctx context.Context, client httpclient.HTTPDoer, method, reqURL string, headers http.Header, debugOut io.Writer) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-	mergeHeaders(req.Header, headers)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if debugOut != nil {
-		_, _ = fmt.Fprintf(debugOut, "debug upstream_response method=%s url=%s status=%d body=%s\n", method, reqURL, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("request %s %s failed: status=%d body=%s", method, reqURL, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return body, nil
-}
-
-func resolveBaseURLFromExpr(expr string) string {
-	raw := strings.TrimSpace(expr)
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "\"") && strings.HasSuffix(raw, "\"") {
-		v, err := strconv.Unquote(raw)
-		if err == nil {
-			return strings.TrimSpace(v)
-		}
-	}
-	return raw
-}
-
-func mergeHeaders(dst, src http.Header) {
-	for k, vals := range src {
-		for _, v := range vals {
-			dst.Add(k, v)
-		}
-	}
-}
-
-func cloneHeaders(h http.Header) http.Header {
-	out := make(http.Header, len(h))
-	for k, vals := range h {
-		cp := make([]string, len(vals))
-		copy(cp, vals)
-		out[k] = cp
-	}
-	return out
-}
-
-func buildBalanceRequestURL(baseURL, defaultPath, configuredPath string) (string, error) {
-	path := strings.TrimSpace(configuredPath)
-	if path == "" {
-		path = strings.TrimSpace(defaultPath)
-	}
-	if path == "" {
-		return "", errors.New("balance path is empty")
-	}
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return path, nil
-	}
-	b := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
-	if b == "" {
-		return "", errors.New("balance baseURL is empty")
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	u, err := url.Parse(b + path)
-	if err != nil {
-		return "", err
-	}
-	return u.String(), nil
-}
-
-func applyHeaderOps(h http.Header, ops []dslconfig.HeaderOp, meta *dslmeta.Meta) {
-	for _, op := range ops {
-		name := strings.TrimSpace(dslconfig.EvalStringExpr(op.NameExpr, meta))
-		if name == "" {
-			continue
-		}
-		switch strings.ToLower(strings.TrimSpace(op.Op)) {
-		case "header_set":
-			h.Set(name, dslconfig.EvalStringExpr(op.ValueExpr, meta))
-		case "header_del":
-			h.Del(name)
-		}
-	}
 }
