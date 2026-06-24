@@ -123,3 +123,56 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 		t.Fatalf("unexpected Authorization header: %s", reqs[0].Header.Get("Authorization"))
 	}
 }
+
+func TestQuery_EvaluatesTemplateModelsPath(t *testing.T) {
+	fakeClient := httpclienttest.NewFakeDoer(t,
+		httpclienttest.NewStringResponse(http.StatusOK, `{"models":[{"name":"projects/vertex-project/locations/us-central1/models/tuned-gemini"}]}`),
+	)
+
+	pf := dslconfig.ProviderFile{
+		Models: dslconfig.ProviderModels{
+			Defaults: dslconfig.ModelsQueryConfig{
+				Mode:    "custom",
+				Method:  "GET",
+				Path:    `template("/v1/projects/${credential.project_id}/locations/${channel.location}/models")`,
+				IDPaths: []string{"$.models[*].name"},
+				IDRegex: `^projects/[^/]+/locations/[^/]+/models/(.+)$`,
+				Headers: []dslconfig.HeaderOp{
+					{
+						Op:        "header_set",
+						NameExpr:  `"x-goog-user-project"`,
+						ValueExpr: `template("${credential.project_id}")`,
+					},
+				},
+			},
+		},
+	}
+
+	result, err := Query(context.Background(), Params{
+		Provider: "vertex",
+		File:     pf,
+		Meta: &dslmeta.Meta{
+			CredentialProjectID: "vertex-project",
+			ChannelLocation:     "us-central1",
+		},
+		BaseURL:    "https://aiplatform.googleapis.com",
+		HTTPClient: fakeClient,
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(result.IDs) != 1 || result.IDs[0] != "tuned-gemini" {
+		t.Fatalf("ids=%v", result.IDs)
+	}
+	reqs := fakeClient.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests=%d", len(reqs))
+	}
+	wantURL := "https://aiplatform.googleapis.com/v1/projects/vertex-project/locations/us-central1/models"
+	if got := reqs[0].URL.String(); got != wantURL {
+		t.Fatalf("request url=%q want=%q", got, wantURL)
+	}
+	if got := reqs[0].Header.Get("x-goog-user-project"); got != "vertex-project" {
+		t.Fatalf("x-goog-user-project=%q", got)
+	}
+}

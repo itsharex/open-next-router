@@ -76,6 +76,11 @@ func validateHeaderOps(path, providerName, scope string, headers []HeaderOp) err
 		if op.Op == opHeaderSet && strings.TrimSpace(op.ValueExpr) == "" {
 			return fmt.Errorf("provider %q in %q: %s value is empty", providerName, path, opScope)
 		}
+		if op.Op == opHeaderSet {
+			if err := ValidateStringExpr(op.ValueExpr); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid header value expression: %w", providerName, path, opScope, err)
+			}
+		}
 		if op.Op == opHeaderFilter {
 			if len(op.Patterns) == 0 {
 				return fmt.Errorf("provider %q in %q: %s requires at least one pattern", providerName, path, opScope)
@@ -134,20 +139,41 @@ func validateOAuthConfig(path, providerName, scope string, cfg OAuthConfig) erro
 	if cfg.FallbackTTLSeconds != nil && *cfg.FallbackTTLSeconds <= 0 {
 		return fmt.Errorf("provider %q in %q: %s oauth_fallback_ttl_sec must be > 0", providerName, path, scope)
 	}
-	if mode != oauthModeCustom && len(cfg.Form) > 0 {
-		// allow field overrides in builtin modes
-		for i, f := range cfg.Form {
-			if strings.TrimSpace(f.Key) == "" {
-				return fmt.Errorf("provider %q in %q: %s oauth_form[%d] key is empty", providerName, path, scope, i)
-			}
-		}
-	}
 	if mode == oauthModeCustom {
 		if strings.TrimSpace(cfg.TokenURLExpr) == "" {
 			return fmt.Errorf("provider %q in %q: %s oauth_token_url is required in custom mode", providerName, path, scope)
 		}
 		if len(cfg.Form) == 0 {
 			return fmt.Errorf("provider %q in %q: %s oauth_form is required in custom mode", providerName, path, scope)
+		}
+	}
+	if mode == oauthModeGoogleSA && strings.TrimSpace(cfg.ScopeExpr) == "" {
+		return fmt.Errorf("provider %q in %q: %s oauth_scope is required in google_service_account_file mode", providerName, path, scope)
+	}
+	for _, pair := range []struct {
+		name string
+		val  string
+	}{
+		{name: "oauth_token_url", val: cfg.TokenURLExpr},
+		{name: "oauth_client_id", val: cfg.ClientIDExpr},
+		{name: "oauth_client_secret", val: cfg.ClientSecretExpr},
+		{name: "oauth_refresh_token", val: cfg.RefreshTokenExpr},
+		{name: "oauth_scope", val: cfg.ScopeExpr},
+		{name: "oauth_audience", val: cfg.AudienceExpr},
+	} {
+		if strings.TrimSpace(pair.val) == "" {
+			continue
+		}
+		if err := ValidateStringExpr(pair.val); err != nil {
+			return fmt.Errorf("provider %q in %q: %s %s invalid expression: %w", providerName, path, scope, pair.name, err)
+		}
+	}
+	for i, f := range cfg.Form {
+		if strings.TrimSpace(f.Key) == "" {
+			return fmt.Errorf("provider %q in %q: %s oauth_form[%d] key is empty", providerName, path, scope, i)
+		}
+		if err := ValidateStringExpr(f.ValueExpr); err != nil {
+			return fmt.Errorf("provider %q in %q: %s oauth_form[%d] invalid expression: %w", providerName, path, scope, i, err)
 		}
 	}
 	for _, pair := range []struct {
@@ -205,6 +231,11 @@ func validateResponseDirective(path, providerName, scope string, d ResponseDirec
 		case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if op.Op == jsonOpSet || op.Op == jsonOpReplace || op.Op == jsonOpSetIfAbsent {
+				if err := validateJSONValueExpr(op.ValueExpr); err != nil {
+					return fmt.Errorf("provider %q in %q: %s invalid value expression: %w", providerName, path, opScope, err)
+				}
 			}
 		case jsonOpRename:
 			if _, err := parseObjectPath(op.FromPath); err != nil {

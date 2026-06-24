@@ -212,7 +212,7 @@ Effect: `<Header-Name>: <channel.key>`
 
 ```conf
 auth {
-  oauth_mode openai;              # openai|gemini|qwen|claude|iflow|antigravity|kimi|custom
+  oauth_mode openai;              # openai|gemini|qwen|claude|iflow|antigravity|kimi|google_service_account_file|custom
   oauth_refresh_token $channel.key;
   auth_oauth_bearer;
 }
@@ -222,6 +222,11 @@ auth {
 - `auth_oauth_bearer;` injects `Authorization: Bearer <oauth.access_token>`.
 - Builtin modes provide provider-specific defaults (token endpoint / request format).
 - `custom` mode requires explicit `oauth_token_url` and at least one `oauth_form`.
+- `google_service_account_file` uses a GCP service account credential from runtime metadata:
+  - ONR file mode supplies `credential_file`.
+  - Embedding runtimes may supply credential JSON directly.
+  - `oauth_scope` is required. For Vertex AI it is normally `https://www.googleapis.com/auth/cloud-platform`.
+  - The credential JSON `token_uri` is preferred; if it is empty, the mode falls back to `https://oauth2.googleapis.com/token`.
 - Optional overrides:
   - `oauth_token_url <expr>;`
   - `oauth_client_id <expr>;`
@@ -250,11 +255,13 @@ It owns request-header operations, lightweight JSON body transforms, and model m
 request {
   set_header "x-trace-id" "trace-123";
   set_header "x-foo" concat("a-", $request.model_mapped);
+  set_header "x-model-route" template("models/${request.model_mapped}");
 }
 ```
 
 - Multiple directives are allowed; executed in order.
 - If the same header is set multiple times, the last one wins.
+- Header values are string expressions and support `template(...)`.
 
 #### del_header (multiple allowed)
 
@@ -351,7 +358,7 @@ request {
 
 - Applies lightweight transforms to the upstream request JSON.
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
-- `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
+- `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`, and `template(...)`.
 - `json_set` sets a field and creates missing object-path parents.
 - `json_replace` only replaces an existing target path; missing paths are no-op and no parent object or leaf field is created.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
@@ -403,6 +410,14 @@ upstream {
   `${$request.model_mapped}` is also accepted.
 - Plain string literals do not expand variables. For example, `"/v1/$request.model_mapped"` is a literal path.
 - Use `\${...}` inside a template when a literal `${...}` sequence is required.
+- Example with credential and channel metadata:
+
+```conf
+upstream {
+  set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+}
+```
+
 - `set_path` values must be path-shaped and start with `/`. Variable-only paths are not accepted; embed variables in
   `template(...)` or `concat(...)` with a static `/` prefix.
 
@@ -420,6 +435,7 @@ upstream {
 
 - Multiple directives are allowed.
 - If the same key is set multiple times, the last one wins.
+- Query values are string expressions and support `template(...)`.
 - **Important:** built-in variables (e.g. `$channel.key`, `$request.model_mapped`) are only expanded when used as bare expressions.
   If you wrap them in double quotes, they are treated as plain string literals and will not be expanded.
 
@@ -517,6 +533,7 @@ Semantics:
 - Non-JSON / non-object payloads are passed through unchanged.
 - Execution order follows the order in the config block.
 - `json_set` creates missing paths; `json_replace` only replaces existing paths, which is useful for replacing upstream `model` fields without polluting unrelated events.
+- `json_set`, `json_replace`, and `json_set_if_absent` value expressions support `template(...)`.
 - In streaming SSE, `json_set`, `json_replace`, `json_set_if_absent`, `json_del`, and `json_rename` may add `event="<name|name2>"` to run only for matching SSE `event:` names.
 - Response JSON ops may add `max_count=<n>` to limit how many times one directive can take effect during one response handling cycle. The default `max_count=0` means unlimited.
 
@@ -609,7 +626,7 @@ models_mode "openai" {
 - Inside the block, you can use the same directives supported by `models`: `models_mode`, `method`, `path`, `id_path`, `id_regex`, `id_allow_regex`, `set_header`, and `del_header`.
 - Another `models_mode` may be referenced from inside the block via `models_mode <other_mode>;`. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `models_mode` names are validation errors.
-- This repository's default `config/modes/models_modes.conf` defines `openai` and `gemini` as global `models_mode` presets. Defining the same name in DSL overrides that preset.
+- This repository's default `config/modes/models_modes.conf` defines `openai`, `gemini`, and `vertex` as global `models_mode` presets. Defining the same name in DSL overrides that preset.
 
 #### balance_mode (global reusable balance preset)
 
@@ -1067,6 +1084,17 @@ models {
 }
 ```
 
+Template path example:
+
+```conf
+models {
+  models_mode custom;
+  path template("/v1/projects/${credential.project_id}/locations/${channel.location}/models");
+  id_path "$.models[*].name";
+  id_regex "^projects/[^/]+/locations/[^/]+/models/(.+)$";
+}
+```
+
 Semantics:
 
 - `models_mode openai` default path/extract:
@@ -1094,6 +1122,14 @@ The channel base URL (string).
 `$channel.key`  
 The channel key / token (string).
 
+`$channel.location`
+
+The channel/provider location (string), for example `global` or `us-central1`.
+
+`$credential.project_id`
+
+The project id parsed from the active credential (string).
+
 `$request.model`  
 The original request model (string).
 
@@ -1106,11 +1142,17 @@ Expression forms (v0.1):
 - Variable: `$channel.key`
 - Concatenation: `concat("Bearer ", $channel.key)`
 - Template string: `template("/v1/${request.model_mapped}")`
+- Vertex-style template string:
+  `template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent")`
 
 `template(...)` accepts exactly one string literal argument. Template placeholders are resolved at runtime using the
 same built-in variables as bare expressions. Placeholder names normally omit the leading `$`, for example
 `${request.model_mapped}`. `${$request.model_mapped}` is also accepted. Unknown placeholder names are invalid during
 provider validation.
+
+Template strings are supported only in expression positions such as `<expr>`, `<value-expr>`, and documented
+`<path-or-url-or-template>` fields. JSONPath, regex, mode names, header names, query keys, and filter patterns do not
+expand template placeholders.
 
 > v0.1 intentionally keeps expressions minimal; there is no general-purpose scripting language.
 
@@ -1264,8 +1306,11 @@ Context: auth
 Multiple: yes (last wins)
 ```
 
-- Allowed `<mode>`: `openai|gemini|qwen|claude|iflow|antigravity|kimi|custom`.
+- Allowed `<mode>`: `openai|gemini|qwen|claude|iflow|antigravity|kimi|google_service_account_file|custom`.
 - Enables runtime OAuth token exchange.
+- `google_service_account_file` exchanges a Google service account JWT assertion for an access token. It reads
+  `credential_file` in ONR file mode, or credential JSON from the embedding runtime, prefers the JSON `token_uri`,
+  and defaults to `https://oauth2.googleapis.com/token`.
 
 #### auth_oauth_bearer
 
@@ -1394,6 +1439,7 @@ Multiple: yes
 
 - Sets a JSON value and creates missing object-path parents.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `<value-expr>` supports `true/false/null`, integer, string literal, variable, `concat(...)`, and `template(...)`.
 - `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
 - `max_count=<n>` only applies in `response`; `0` means unlimited, `n > 0` means this directive can make at most `n` actual changes during one response handling cycle.
 
@@ -1605,6 +1651,7 @@ Multiple: yes
 ```
 
 - Sets/overrides a query parameter; multiple allowed (last wins per key).
+- `<value-expr>` supports the expression forms from [6. Expression values](#6-expression-values), including `template(...)`.
 
 #### del_query
 
@@ -1936,14 +1983,14 @@ Multiple: yes
 #### path
 
 ```text
-Syntax:  path <path-or-url>;
+Syntax:  path <path-or-url-or-template>;
 Default: —
 Context: balance
 Multiple: yes
 ```
 
 - Required in `balance_mode custom`.
-- Supports absolute URL or path relative to provider `base_url`.
+- Supports absolute URL, path relative to provider `base_url`, and `template("...")` when the literal template starts with `/`, `http://`, or `https://`.
 
 #### balance_expr / used_expr
 
@@ -1990,17 +2037,20 @@ Context: balance
 Multiple: yes
 ```
 
+- Header values are string expressions and support `template(...)`.
+
 #### subscription_path / usage_path
 
 ```text
-Syntax:  subscription_path <path-or-url>;
-Syntax:  usage_path <path-or-url>;
+Syntax:  subscription_path <path-or-url-or-template>;
+Syntax:  usage_path <path-or-url-or-template>;
 Default: OpenAI dashboard defaults
 Context: balance
 Multiple: yes
 ```
 
 - Optional overrides for `balance_mode openai`.
+- May use `template("...")` when the literal template starts with `/`, `http://`, or `https://`.
 
 ### 7.11 models (upstream model list query)
 
@@ -2028,7 +2078,7 @@ Multiple: yes
 #### path
 
 ```text
-Syntax:  path <path-or-url>;
+Syntax:  path <path-or-url-or-template>;
 Default: mode-dependent
 Context: models
 Multiple: yes
@@ -2037,6 +2087,7 @@ Multiple: yes
 - `models_mode openai`: default `/v1/models`
 - `models_mode gemini`: default `/v1beta/models`
 - `models_mode custom`: required
+- `path` may use `template("...")` when the literal template starts with `/`, `http://`, or `https://`.
 - If `models_mode` is omitted but custom query fields such as `path`, `id_path`, `id_regex`, or `id_allow_regex` are present, ONR treats the block as `models_mode custom;`.
 
 #### id_path
@@ -2075,6 +2126,8 @@ Context: models
 Multiple: yes
 ```
 
+- Header values are string expressions and support `template(...)`.
+
 ---
 
 ## 8. Built-in variables (reference)
@@ -2093,7 +2146,17 @@ Channel base URL (string). Acts as a runtime override source for `upstream_confi
 
 Channel key/token (string). `auth_bearer;` and `auth_header_key ...;` always use this value.
 
-### 8.2 `$request.*`
+`$channel.location`
+
+Provider location (string). For Vertex AI this is usually `global` or a region such as `us-central1`.
+
+### 8.2 `$credential.*`
+
+`$credential.project_id`
+
+Project id parsed from the active credential. For Google service accounts, this is the JSON `project_id`.
+
+### 8.3 `$request.*`
 
 `$request.model`
 
@@ -2103,7 +2166,7 @@ Model name from the client request.
 
 Mapped model name. Defaults to `$request.model`; can be modified by `model_map` and `model_map_default`.
 
-### 8.3 Examples
+### 8.4 Examples
 
 ```conf
 request {
@@ -2121,5 +2184,8 @@ upstream {
 
   # Example: equivalent path template form
   set_path template("/v1/${request.model_mapped}/chat/completions");
+
+  # Example: Vertex AI path with credential and location metadata
+  set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
 }
 ```

@@ -30,19 +30,23 @@ func (c *Client) prepareOAuthForUpstream(ctx context.Context, provider string, p
 
 	client := c.oauthTokenClient()
 	tok, err := client.GetToken(ctx, oauthclient.AcquireInput{
-		CacheKey:          cacheKey,
-		TokenURL:          resolved.TokenURL,
-		Method:            resolved.Method,
-		ContentType:       resolved.ContentType,
-		Form:              resolved.Form,
-		BasicAuthUsername: resolved.BasicAuthUsername,
-		BasicAuthPassword: resolved.BasicAuthPassword,
-		TokenPath:         resolved.TokenPath,
-		ExpiresInPath:     resolved.ExpiresInPath,
-		TokenTypePath:     resolved.TokenTypePath,
-		Timeout:           time.Duration(resolved.TimeoutMs) * time.Millisecond,
-		RefreshSkew:       time.Duration(resolved.RefreshSkewSec) * time.Second,
-		FallbackTTL:       time.Duration(resolved.FallbackTTLSec) * time.Second,
+		CacheKey:                     cacheKey,
+		Mode:                         resolved.Mode,
+		TokenURL:                     resolved.TokenURL,
+		Method:                       resolved.Method,
+		ContentType:                  resolved.ContentType,
+		Form:                         resolved.Form,
+		ServiceAccountCredentialFile: resolved.ServiceAccountCredentialFile,
+		ServiceAccountCredentialJSON: resolved.ServiceAccountCredentialJSON,
+		ServiceAccountScope:          resolved.Scope,
+		BasicAuthUsername:            resolved.BasicAuthUsername,
+		BasicAuthPassword:            resolved.BasicAuthPassword,
+		TokenPath:                    resolved.TokenPath,
+		ExpiresInPath:                resolved.ExpiresInPath,
+		TokenTypePath:                resolved.TokenTypePath,
+		Timeout:                      time.Duration(resolved.TimeoutMs) * time.Millisecond,
+		RefreshSkew:                  time.Duration(resolved.RefreshSkewSec) * time.Second,
+		FallbackTTL:                  time.Duration(resolved.FallbackTTLSec) * time.Second,
 	})
 	if err != nil {
 		return err

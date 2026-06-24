@@ -17,6 +17,15 @@ func validateProviderRouting(path, providerName string, routing ProviderRouting)
 				)
 			}
 		}
+		for key, value := range m.QueryPairs {
+			if err := ValidateStringExpr(value); err != nil {
+				return validationIssue(
+					fmt.Errorf("provider %q in %q: %s invalid set_query %q expression: %w", providerName, path, scope, key, err),
+					scope,
+					"set_query",
+				)
+			}
+		}
 	}
 	return nil
 }
@@ -63,6 +72,49 @@ func validateSetPathExpr(expr string) error {
 	return fmt.Errorf("unsupported expression %q", raw)
 }
 
+// ValidatePathOrURLExpr validates a DSL expression whose literal template must be a path or absolute URL.
+func ValidatePathOrURLExpr(expr string) error {
+	raw := strings.TrimSpace(expr)
+	if raw == "" {
+		return fmt.Errorf("expression is empty")
+	}
+	if isQuotedStringExpr(raw) {
+		return validateURLPathLiteral(unquoteString(raw))
+	}
+	if validateURLPathLiteral(raw) == nil {
+		if strings.Contains(raw, "$") {
+			return fmt.Errorf("unquoted path/url literals cannot contain '$'; use template(...) for variables")
+		}
+		return nil
+	}
+	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
+		args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")"))
+		if len(args) == 0 {
+			return fmt.Errorf("concat requires at least one argument")
+		}
+		if err := ValidatePathOrURLExpr(args[0]); err != nil {
+			return fmt.Errorf("concat argument 0 must be path/url-shaped: %w", err)
+		}
+		for i, arg := range args[1:] {
+			if err := ValidateStringExpr(arg); err != nil {
+				return fmt.Errorf("concat argument %d: %w", i+1, err)
+			}
+		}
+		return nil
+	}
+	if strings.HasPrefix(raw, "template(") && strings.HasSuffix(raw, ")") {
+		tmpl, err := validateTemplateExpr(raw)
+		if err != nil {
+			return err
+		}
+		return validateURLPathLiteral(tmpl)
+	}
+	if isBuiltinStringVariable(raw) {
+		return fmt.Errorf("bare variables are not valid path/url expressions; embed variables in template(...) or concat(...) with a path/url prefix")
+	}
+	return fmt.Errorf("unsupported expression %q", raw)
+}
+
 func validateTemplateExpr(raw string) (string, error) {
 	args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, "template("), ")"))
 	if len(args) != 1 {
@@ -87,6 +139,11 @@ func validatePathLiteral(path string) error {
 }
 
 func validateStringExpr(expr string) error {
+	return ValidateStringExpr(expr)
+}
+
+// ValidateStringExpr validates a DSL string expression.
+func ValidateStringExpr(expr string) error {
 	raw := strings.TrimSpace(expr)
 	if raw == "" {
 		return fmt.Errorf("expression is empty")

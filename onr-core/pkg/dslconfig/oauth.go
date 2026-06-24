@@ -1,7 +1,11 @@
 package dslconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +21,7 @@ const (
 	oauthModeIFLow       = "iflow"
 	oauthModeAntigravity = "antigravity"
 	oauthModeKimi        = "kimi"
+	oauthModeGoogleSA    = "google_service_account_file"
 	oauthModeCustom      = "custom"
 
 	oauthContentTypeForm = "form"
@@ -56,9 +61,14 @@ type ResolvedOAuthConfig struct {
 	ContentType string
 
 	Form map[string]string
+	// Scope is used by assertion-based OAuth modes such as Google service accounts.
+	Scope string
 	// Optional for providers that require client auth in HTTP Basic.
 	BasicAuthUsername string
 	BasicAuthPassword string
+
+	ServiceAccountCredentialFile string
+	ServiceAccountCredentialJSON string
 
 	TokenPath      string
 	ExpiresInPath  string
@@ -186,6 +196,12 @@ func (c *OAuthConfig) Resolve(meta *dslmeta.Meta) (*ResolvedOAuthConfig, bool) {
 	switch mode {
 	case oauthModeCustom:
 		// custom mode: only explicit oauth_form fields are used.
+	case oauthModeGoogleSA:
+		res.Scope = scope
+		if meta != nil {
+			res.ServiceAccountCredentialFile = strings.TrimSpace(meta.CredentialFile)
+			res.ServiceAccountCredentialJSON = strings.TrimSpace(meta.CredentialJSON)
+		}
 	default:
 		res.Form["grant_type"] = "refresh_token"
 		if refreshToken != "" {
@@ -258,7 +274,19 @@ func (r *ResolvedOAuthConfig) CacheIdentity() string {
 		b.WriteByte('=')
 		b.WriteString(r.Form[k])
 	}
-	return b.String()
+	if strings.EqualFold(strings.TrimSpace(r.Mode), oauthModeGoogleSA) {
+		b.WriteByte('|')
+		b.WriteString("scope=")
+		b.WriteString(r.Scope)
+		b.WriteByte('|')
+		b.WriteString("credential=")
+		b.WriteString(serviceAccountCredentialIdentity(r.ServiceAccountCredentialFile, r.ServiceAccountCredentialJSON))
+		b.WriteByte('|')
+		b.WriteString("token_uri=")
+		b.WriteString(serviceAccountTokenURIForIdentity(r.ServiceAccountCredentialFile, r.ServiceAccountCredentialJSON, r.TokenURL))
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 type oauthTemplate struct {
@@ -375,6 +403,17 @@ var oauthBuiltinTemplates = map[string]oauthTemplate{
 		RefreshSkewSec: 300,
 		FallbackTTLSec: 1800,
 	},
+	oauthModeGoogleSA: {
+		TokenURL:       "https://oauth2.googleapis.com/token",
+		Method:         http.MethodPost,
+		ContentType:    oauthContentTypeForm,
+		TokenPath:      "$.access_token",
+		ExpiresInPath:  "$.expires_in",
+		TokenTypePath:  "$.token_type",
+		TimeoutMs:      5000,
+		RefreshSkewSec: 300,
+		FallbackTTLSec: 1800,
+	},
 	oauthModeCustom: {
 		Method:         http.MethodPost,
 		ContentType:    oauthContentTypeForm,
@@ -385,6 +424,44 @@ var oauthBuiltinTemplates = map[string]oauthTemplate{
 		RefreshSkewSec: 300,
 		FallbackTTLSec: 1800,
 	},
+}
+
+type serviceAccountIdentityJSON struct {
+	TokenURI string `json:"token_uri"`
+}
+
+func serviceAccountCredentialIdentity(filePath string, jsonContent string) string {
+	raw := serviceAccountCredentialRawForIdentity(filePath, jsonContent)
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func serviceAccountTokenURIForIdentity(filePath string, jsonContent string, fallback string) string {
+	raw := serviceAccountCredentialRawForIdentity(filePath, jsonContent)
+	var doc serviceAccountIdentityJSON
+	if strings.TrimSpace(raw) != "" && json.Unmarshal([]byte(raw), &doc) == nil && strings.TrimSpace(doc.TokenURI) != "" {
+		return strings.TrimSpace(doc.TokenURI)
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func serviceAccountCredentialRawForIdentity(filePath string, jsonContent string) string {
+	if strings.TrimSpace(jsonContent) != "" {
+		return jsonContent
+	}
+	path := strings.TrimSpace(filePath)
+	if path == "" {
+		return ""
+	}
+	// #nosec G304 -- path is supplied by trusted local ONR configuration.
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func firstNonEmpty(values ...string) string {

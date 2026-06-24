@@ -140,12 +140,19 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 			Balance: dslconfig.ProviderBalance{
 				Defaults: dslconfig.BalanceQueryConfig{
 					Mode:        "custom",
-					Path:        "/v1/balance",
+					Path:        `template("/v1/${channel.location}/balance")`,
 					BalancePath: "$.data.total",
+					Headers: []dslconfig.HeaderOp{
+						{
+							Op:        "header_set",
+							NameExpr:  `"x-project"`,
+							ValueExpr: `template("${credential.project_id}")`,
+						},
+					},
 				},
 			},
 		},
-		Meta:       &dslmeta.Meta{API: "chat.completions"},
+		Meta:       &dslmeta.Meta{API: "chat.completions", ChannelLocation: "us-central1", CredentialProjectID: "vertex-project"},
 		APIKey:     "sk-test",
 		BaseURL:    "https://billing.example",
 		HTTPClient: fakeClient,
@@ -160,10 +167,53 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("requests=%d", len(reqs))
 	}
-	if reqs[0].URL.String() != "https://billing.example/v1/balance" {
+	if reqs[0].URL.String() != "https://billing.example/v1/us-central1/balance" {
 		t.Fatalf("unexpected request url: %s", reqs[0].URL.String())
+	}
+	if got := reqs[0].Header.Get("x-project"); got != "vertex-project" {
+		t.Fatalf("x-project=%q", got)
 	}
 	if reqs[0].Method != http.MethodGet {
 		t.Fatalf("unexpected method: %s", reqs[0].Method)
+	}
+}
+
+func TestQueryOpenAI_EvaluatesTemplatePaths(t *testing.T) {
+	fakeClient := httpclienttest.NewFakeDoer(t,
+		httpclienttest.NewStringResponse(http.StatusOK, `{"has_payment_method":true,"hard_limit_usd":100}`),
+		httpclienttest.NewStringResponse(http.StatusOK, `{"total_usage":2500}`),
+	)
+
+	result, err := Query(context.Background(), Params{
+		Provider: "openai",
+		File: dslconfig.ProviderFile{
+			Balance: dslconfig.ProviderBalance{
+				Defaults: dslconfig.BalanceQueryConfig{
+					Mode:             "openai",
+					SubscriptionPath: `template("/${channel.location}/subscription")`,
+					UsagePath:        `template("/${channel.location}/usage")`,
+				},
+			},
+		},
+		Meta:       &dslmeta.Meta{API: "chat.completions", ChannelLocation: "billing"},
+		APIKey:     "sk-test",
+		BaseURL:    "https://billing.example",
+		HTTPClient: fakeClient,
+	})
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	if result.Balance != 75 {
+		t.Fatalf("balance=%v", result.Balance)
+	}
+	reqs := fakeClient.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("requests=%d", len(reqs))
+	}
+	if got := reqs[0].URL.Path; got != "/billing/subscription" {
+		t.Fatalf("subscription path=%q", got)
+	}
+	if got := reqs[1].URL.Path; got != "/billing/usage" {
+		t.Fatalf("usage path=%q", got)
 	}
 }

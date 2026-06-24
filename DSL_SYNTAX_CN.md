@@ -213,7 +213,7 @@ auth { auth_header_key api_key; }
 
 ```conf
 auth {
-  oauth_mode openai;              # openai|gemini|qwen|claude|iflow|antigravity|kimi|custom
+  oauth_mode openai;              # openai|gemini|qwen|claude|iflow|antigravity|kimi|google_service_account_file|custom
   oauth_refresh_token $channel.key;
   auth_oauth_bearer;
 }
@@ -223,6 +223,11 @@ auth {
 - `auth_oauth_bearer;`：注入 `Authorization: Bearer <oauth.access_token>`。
 - 内置 mode 会提供默认 token endpoint 与请求格式。
 - `custom` 模式必须显式配置 `oauth_token_url`，并至少有一条 `oauth_form`。
+- `google_service_account_file` 使用运行时元数据中的 GCP service account credential：
+  - ONR 文件模式提供 `credential_file`。
+  - 嵌入式运行时可以直接提供 credential JSON。
+  - `oauth_scope` 必填。Vertex AI 通常使用 `https://www.googleapis.com/auth/cloud-platform`。
+  - 优先使用 credential JSON 中的 `token_uri`；为空时 fallback 到 `https://oauth2.googleapis.com/token`。
 - 可选覆盖项：
   - `oauth_token_url <expr>;`
   - `oauth_client_id <expr>;`
@@ -250,6 +255,7 @@ auth {
 request {
   set_header "x-trace-id" "trace-123";
   set_header "x-foo" concat("a-", $request.model_mapped);
+  set_header "x-model-route" template("models/${request.model_mapped}");
 }
 ```
 
@@ -257,6 +263,7 @@ request {
 
 - 支持多条；按顺序执行
 - 同一 header 多次 `set_header`：后写的覆盖先写的
+- header 值是字符串表达式，支持 `template(...)`
 
 #### del_header（可多条）
 
@@ -365,7 +372,7 @@ request {
 
 - 用途：对“已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
-- `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量/concat
+- `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`
 - `json_set`：设置字段；不存在的对象路径会自动创建
 - `json_replace`：仅当目标路径已存在时替换字段；路径不存在时为 no-op，不会创建缺失对象或字段
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
@@ -419,6 +426,14 @@ upstream {
   `${$request.model_mapped}` 也可使用。
 - 普通字符串字面量不会展开变量。例如，`"/v1/$request.model_mapped"` 会被当作普通 path 字面量。
 - 如需在模板中保留字面量 `${...}`，可写成 `\${...}`。
+- 使用 credential 与 channel 元数据的示例：
+
+```conf
+upstream {
+  set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+}
+```
+
 - `set_path` 的值必须是 path 形态并以 `/` 开头。不接受纯变量 path；如需变量，请在带有静态 `/`
   前缀的 `template(...)` 或 `concat(...)` 中嵌入变量。
 
@@ -438,6 +453,7 @@ upstream {
 
 - 支持多条
 - 同一 key 多次 `set_query`：后写的覆盖先写的
+- query 值是字符串表达式，支持 `template(...)`
 - **重要：**内置变量（例如 `$channel.key`、`$request.model_mapped`）仅在作为“裸表达式”使用时才会展开；如果放进双引号里，会被当作普通字符串字面量，不会展开。
 
 #### del_query（可多条）
@@ -536,6 +552,7 @@ response {
 - 非 JSON / 非对象负载：保持原样透传
 - 执行顺序：按配置块内出现顺序依次执行
 - `json_set` 会创建缺失路径；`json_replace` 只替换已存在路径，适合替换上游响应中的 `model` 字段而不污染其它事件。
+- `json_set`、`json_replace`、`json_set_if_absent` 的值表达式支持 `template(...)`
 - 流式 SSE 中，`json_set`、`json_replace`、`json_set_if_absent`、`json_del`、`json_rename` 可追加 `event="<name|name2>"`，按 SSE `event:` 名过滤执行。
 - response JSON 操作可追加 `max_count=<n>` 限制单条指令在一次响应处理周期内的最大生效次数；默认 `max_count=0` 表示不限次数。
 
@@ -639,7 +656,7 @@ models_mode "openai" {
 - `models_mode` 块内支持和 `models` phase 相同的指令：`models_mode`、`method`、`path`、`id_path`、`id_regex`、`id_allow_regex`、`set_header`、`del_header`。
 - `models_mode` 内部也可以继续通过 `models_mode <other_mode>;` 引用另一个 `models_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`models_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/modes/models_modes.conf` 会定义 `openai` 和 `gemini` 这几个全局 `models_mode` 预设；如果你在 DSL 里声明同名 `models_mode`，就会覆盖这份默认预设。
+- 本仓库默认的 `config/modes/models_modes.conf` 会定义 `openai`、`gemini` 和 `vertex` 这几个全局 `models_mode` 预设；如果你在 DSL 里声明同名 `models_mode`，就会覆盖这份默认预设。
 
 #### balance_mode（全局可复用 balance 预设）
 
@@ -1144,6 +1161,14 @@ metrics {
 `$channel.key`  
 渠道配置的 `key`（鉴权 token，字符串）。
 
+`$channel.location`
+
+渠道/provider 的 location（字符串），例如 `global` 或 `us-central1`。
+
+`$credential.project_id`
+
+从当前 credential 解析出的 project id（字符串）。
+
 `$request.model`  
 原始请求的模型名（字符串）。
 
@@ -1156,10 +1181,16 @@ metrics {
 - 变量引用：`$channel.key`
 - 连接：`concat("Bearer ", $channel.key)`
 - 模板字符串：`template("/v1/${request.model_mapped}")`
+- Vertex 风格模板字符串：
+  `template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent")`
 
 `template(...)` 只接受一个字符串字面量参数。模板占位符会在运行期使用与裸表达式相同的内置变量求值。
 占位符名称通常省略开头的 `$`，例如 `${request.model_mapped}`。`${$request.model_mapped}` 也可使用。
 未知占位符名称会在 provider 校验阶段报错。
+
+模板字符串只在表达式位置生效，例如 `<expr>`、`<value-expr>`，以及文档明确标注的
+`<path-or-url-or-template>` 字段。JSONPath、正则、mode 名称、header 名、query key、filter pattern
+不会展开模板占位符。
 
 > 注意：除上述最小能力外，v0.1 不支持更复杂的函数/运算。
 
@@ -1299,8 +1330,11 @@ Context: auth
 Multiple: yes（最后一条生效）
 ```
 
-- `<mode>` 可选：`openai|gemini|qwen|claude|iflow|antigravity|kimi|custom`。
+- `<mode>` 可选：`openai|gemini|qwen|claude|iflow|antigravity|kimi|google_service_account_file|custom`。
 - 含义：开启运行时 OAuth token 交换。
+- `google_service_account_file` 会使用 Google service account JWT assertion 换取 access token。ONR 文件模式读取
+  `credential_file`，嵌入式运行时可直接传入 credential JSON；优先使用 JSON 中的 `token_uri`，为空时默认
+  `https://oauth2.googleapis.com/token`。
 
 #### auth_oauth_bearer
 
@@ -1355,6 +1389,7 @@ Multiple: yes
 ```
 
 - 支持多条；按顺序执行；同名 header 多次 set 时后者覆盖前者。
+- `<expr>` 支持内置变量、`concat(...)`、`template(...)` 等字符串表达式。
 
 #### del_header
 
@@ -1430,7 +1465,7 @@ Multiple: yes
 
 - 设置 JSON 字段；不存在的对象路径会自动创建。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
-- `<expr>` 在此处支持：`true/false/null`、整数、字符串字面量、变量/concat。
+- `<expr>` 在此处支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
 - `max_count=<n>` 仅在 `response` 中有效；`0` 表示不限次数，`n > 0` 表示本指令在一次响应处理周期内最多实际修改 `n` 次。
 
@@ -1596,6 +1631,7 @@ Multiple: yes
 ```
 
 - 支持多条；同一 key 多次 set 时后者覆盖前者。
+- `<expr>` 支持第 6 节中的表达式形态，包括 `template(...)`。
 
 #### del_query
 
@@ -1942,14 +1978,14 @@ Multiple: yes
 #### path
 
 ```text
-Syntax:  path <path-or-url>;
+Syntax:  path <path-or-url-or-template>;
 Default: —
 Context: balance
 Multiple: yes
 ```
 
 - `balance_mode custom` 时必填。
-- 支持绝对 URL 或相对 provider `base_url` 的路径。
+- 支持绝对 URL、相对 provider `base_url` 的路径，以及 `template("...")`；模板字面量必须以 `/`、`http://` 或 `https://` 开头。
 
 #### balance_expr / used_expr
 
@@ -1996,17 +2032,20 @@ Context: balance
 Multiple: yes
 ```
 
+- header 值是字符串表达式，支持 `template(...)`。
+
 #### subscription_path / usage_path
 
 ```text
-Syntax:  subscription_path <path-or-url>;
-Syntax:  usage_path <path-or-url>;
+Syntax:  subscription_path <path-or-url-or-template>;
+Syntax:  usage_path <path-or-url-or-template>;
 Default: OpenAI dashboard 默认路径
 Context: balance
 Multiple: yes
 ```
 
 - `balance_mode openai` 的可选覆盖项。
+- 可使用 `template("...")`；模板字面量必须以 `/`、`http://` 或 `https://` 开头。
 
 ### 7.11 models（上游模型列表查询）
 
@@ -2034,7 +2073,7 @@ Multiple: yes
 #### path
 
 ```text
-Syntax:  path <path-or-url>;
+Syntax:  path <path-or-url-or-template>;
 Default: 与 mode 相关
 Context: models
 Multiple: yes
@@ -2043,6 +2082,7 @@ Multiple: yes
 - `models_mode openai`：默认 `/v1/models`
 - `models_mode gemini`：默认 `/v1beta/models`
 - `models_mode custom`：必填
+- `path` 可以使用 `template("...")`；模板字面量必须以 `/`、`http://` 或 `https://` 开头。
 - 如果省略 `models_mode`，但已经声明了 `path`、`id_path`、`id_regex`、`id_allow_regex` 等自定义查询字段，ONR 会自动按 `models_mode custom;` 处理。
 
 #### id_path
@@ -2081,6 +2121,8 @@ Context: models
 Multiple: yes
 ```
 
+- header 值是字符串表达式，支持 `template(...)`。
+
 ---
 
 ## 8. 内置变量参考
@@ -2099,7 +2141,17 @@ Multiple: yes
 
 渠道（DB）配置的 `key`（鉴权 token）。`auth_bearer;` 与 `auth_header_key ...;` 会固定使用该值作为 token/value。
 
-### 8.2 `$request.*`
+`$channel.location`
+
+Provider location。对 Vertex AI 通常是 `global` 或 `us-central1` 这类区域。
+
+### 8.2 `$credential.*`
+
+`$credential.project_id`
+
+从当前 credential 解析出的 project id。对 Google service account 来说，对应 JSON 中的 `project_id`。
+
+### 8.3 `$request.*`
 
 `$request.model`
 
@@ -2109,7 +2161,7 @@ Multiple: yes
 
 映射后的模型名。默认等于 `$request.model`；可通过 `model_map` 与 `model_map_default` 修改。
 
-### 8.3 使用示例
+### 8.4 使用示例
 
 ```conf
 request {
@@ -2127,5 +2179,8 @@ upstream {
 
   # 示例：等价的 path 模板写法
   set_path template("/v1/${request.model_mapped}/chat/completions");
+
+  # 示例：使用 credential 与 location 元数据拼接 Vertex AI path
+  set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
 }
 ```

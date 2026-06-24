@@ -66,6 +66,10 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		meta.APIKey = p.Meta.APIKey
 		meta.OAuthAccessToken = p.Meta.OAuthAccessToken
 		meta.OAuthCacheKey = p.Meta.OAuthCacheKey
+		meta.CredentialFile = p.Meta.CredentialFile
+		meta.CredentialJSON = p.Meta.CredentialJSON
+		meta.CredentialProjectID = p.Meta.CredentialProjectID
+		meta.ChannelLocation = p.Meta.ChannelLocation
 		meta.OriginModelName = p.Meta.OriginModelName
 		meta.DSLModelMapped = p.Meta.DSLModelMapped
 		meta.RequestURLPath = p.Meta.RequestURLPath
@@ -112,9 +116,9 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	)
 	switch mode {
 	case "openai":
-		balance, used, err = queryOpenAIBalanceWithPaths(ctx, client, baseURL, p.APIKey, cfgBalance.SubscriptionPath, cfgBalance.UsagePath, headers, p.DebugOut)
+		balance, used, err = queryOpenAIBalanceWithPaths(ctx, client, baseURL, p.APIKey, cfgBalance.SubscriptionPath, cfgBalance.UsagePath, headers, &meta, p.DebugOut)
 	case "custom":
-		balance, used, err = queryCustomBalance(ctx, client, baseURL, cfgBalance, headers, p.DebugOut)
+		balance, used, err = queryCustomBalance(ctx, client, baseURL, cfgBalance, headers, &meta, p.DebugOut)
 	default:
 		return Result{}, fmt.Errorf("unsupported balance mode %q", cfgBalance.Mode)
 	}
@@ -135,12 +139,12 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	}, nil
 }
 
-func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL string, cfg *dslconfig.BalanceQueryConfig, headers http.Header, debugOut io.Writer) (float64, *float64, error) {
+func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL string, cfg *dslconfig.BalanceQueryConfig, headers http.Header, meta *dslmeta.Meta, debugOut io.Writer) (float64, *float64, error) {
 	method := strings.ToUpper(strings.TrimSpace(cfg.Method))
 	if method == "" {
 		method = http.MethodGet
 	}
-	reqURL, err := buildBalanceRequestURL(baseURL, "", cfg.Path)
+	reqURL, err := buildBalanceRequestURL(baseURL, "", dslconfig.EvalStringExpr(cfg.Path, meta))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -151,8 +155,8 @@ func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL
 	return dslconfig.ExtractBalance(cfg, body)
 }
 
-func queryOpenAIBalanceWithPaths(ctx context.Context, client httpclient.HTTPDoer, baseURL, apiKey, subscriptionPath, usagePath string, baseHeaders http.Header, debugOut io.Writer) (float64, *float64, error) {
-	subURL, err := buildBalanceRequestURL(baseURL, "/v1/dashboard/billing/subscription", subscriptionPath)
+func queryOpenAIBalanceWithPaths(ctx context.Context, client httpclient.HTTPDoer, baseURL, apiKey, subscriptionPath, usagePath string, baseHeaders http.Header, meta *dslmeta.Meta, debugOut io.Writer) (float64, *float64, error) {
+	subURL, err := buildBalanceRequestURL(baseURL, "/v1/dashboard/billing/subscription", dslconfig.EvalStringExpr(subscriptionPath, meta))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -176,7 +180,7 @@ func queryOpenAIBalanceWithPaths(ctx context.Context, client httpclient.HTTPDoer
 		startDate = now.AddDate(0, 0, -100).Format("2006-01-02")
 	}
 
-	uPath := strings.TrimSpace(usagePath)
+	uPath := strings.TrimSpace(dslconfig.EvalStringExpr(usagePath, meta))
 	if uPath == "" {
 		uPath = "/v1/dashboard/billing/usage"
 	}
@@ -291,116 +295,15 @@ func buildBalanceRequestURL(baseURL, defaultPath, configuredPath string) (string
 
 func applyHeaderOps(h http.Header, ops []dslconfig.HeaderOp, meta *dslmeta.Meta) {
 	for _, op := range ops {
-		name := strings.TrimSpace(evalHeaderExpr(op.NameExpr, meta))
+		name := strings.TrimSpace(dslconfig.EvalStringExpr(op.NameExpr, meta))
 		if name == "" {
 			continue
 		}
 		switch strings.ToLower(strings.TrimSpace(op.Op)) {
 		case "header_set":
-			h.Set(name, evalHeaderExpr(op.ValueExpr, meta))
+			h.Set(name, dslconfig.EvalStringExpr(op.ValueExpr, meta))
 		case "header_del":
 			h.Del(name)
 		}
 	}
-}
-
-func evalHeaderExpr(expr string, meta *dslmeta.Meta) string {
-	raw := strings.TrimSpace(expr)
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
-		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")
-		parts := splitTopLevelArgs(inner)
-		var b strings.Builder
-		for _, p := range parts {
-			b.WriteString(evalHeaderExpr(p, meta))
-		}
-		return b.String()
-	}
-	if strings.HasPrefix(raw, "\"") && strings.HasSuffix(raw, "\"") {
-		v, err := strconv.Unquote(raw)
-		if err == nil {
-			return v
-		}
-		return raw
-	}
-	switch raw {
-	case "$channel.base_url":
-		if meta != nil {
-			return meta.BaseURL
-		}
-	case "$channel.key":
-		if meta != nil {
-			return meta.APIKey
-		}
-	case "$request.model":
-		if meta != nil {
-			return meta.OriginModelName
-		}
-	case "$request.model_mapped":
-		if meta != nil {
-			if meta.DSLModelMapped != "" {
-				return meta.DSLModelMapped
-			}
-			return meta.OriginModelName
-		}
-	}
-	return raw
-}
-
-func splitTopLevelArgs(s string) []string {
-	var parts []string
-	var b strings.Builder
-	depth := 0
-	inString := false
-	escaped := false
-	flush := func() {
-		p := strings.TrimSpace(b.String())
-		b.Reset()
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		if inString {
-			b.WriteByte(ch)
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == '"' {
-				inString = false
-			}
-			continue
-		}
-		switch ch {
-		case '"':
-			inString = true
-			b.WriteByte(ch)
-		case '(':
-			depth++
-			b.WriteByte(ch)
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-			b.WriteByte(ch)
-		case ',':
-			if depth == 0 {
-				flush()
-				continue
-			}
-			b.WriteByte(ch)
-		default:
-			b.WriteByte(ch)
-		}
-	}
-	flush()
-	return parts
 }

@@ -20,4 +20,5 @@ models:
   gemini-2.5-flash:
     providers:
       - gemini
+      - vertex
     strategy: round_robin

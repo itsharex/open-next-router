@@ -24,6 +24,17 @@ providers:
         #   ONR_UPSTREAM_KEY_GEMINI_KEY1=AIzaSy...
         value: ""
 
+  vertex:
+    keys:
+      - name: "vertex-sa"
+        # GCP Vertex AI uses a service account JSON file instead of an API key.
+        # Recommended file permission: 0600, owned by the ONR runtime user.
+        credential_file: "/etc/onr/gcp/vertex-sa.json"
+        # Empty location defaults to global at runtime. Regional example: us-central1.
+        location: "global"
+        # Optional: override provider base_url explicitly, for example to use a regional endpoint.
+        # base_url_override: "https://us-central1-aiplatform.googleapis.com"
+
 # Access keys for clients (for token key: onr:v1?...&k64=...).
 access_keys:
   - name: "client-a"

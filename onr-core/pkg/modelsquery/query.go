@@ -77,7 +77,7 @@ func Query(ctx context.Context, p Params) (*Result, error) {
 	if method == "" {
 		method = http.MethodGet
 	}
-	reqURL, err := buildModelsRequestURL(baseURL, cfg.Path)
+	reqURL, err := buildModelsRequestURL(baseURL, dslconfig.EvalStringExpr(cfg.Path, meta))
 	if err != nil {
 		return nil, err
 	}
@@ -98,16 +98,20 @@ func Query(ctx context.Context, p Params) (*Result, error) {
 // cloneMetaForQuery requires a non-nil source meta.
 func cloneMetaForQuery(src *dslmeta.Meta) *dslmeta.Meta {
 	return &dslmeta.Meta{
-		API:              src.API,
-		IsStream:         src.IsStream,
-		BaseURL:          src.BaseURL,
-		APIKey:           src.APIKey,
-		OAuthAccessToken: src.OAuthAccessToken,
-		OAuthCacheKey:    src.OAuthCacheKey,
-		OriginModelName:  src.OriginModelName,
-		DSLModelMapped:   src.DSLModelMapped,
-		RequestURLPath:   src.RequestURLPath,
-		StartTime:        src.StartTime,
+		API:                 src.API,
+		IsStream:            src.IsStream,
+		BaseURL:             src.BaseURL,
+		APIKey:              src.APIKey,
+		OAuthAccessToken:    src.OAuthAccessToken,
+		OAuthCacheKey:       src.OAuthCacheKey,
+		CredentialFile:      src.CredentialFile,
+		CredentialJSON:      src.CredentialJSON,
+		CredentialProjectID: src.CredentialProjectID,
+		ChannelLocation:     src.ChannelLocation,
+		OriginModelName:     src.OriginModelName,
+		DSLModelMapped:      src.DSLModelMapped,
+		RequestURLPath:      src.RequestURLPath,
+		StartTime:           src.StartTime,
 	}
 }
 
@@ -167,117 +171,17 @@ func buildModelsRequestURL(baseURL, path string) (string, error) {
 
 func applyHeaderOps(h http.Header, ops []dslconfig.HeaderOp, meta *dslmeta.Meta) {
 	for _, op := range ops {
-		name := strings.TrimSpace(evalHeaderExpr(op.NameExpr, meta))
+		name := strings.TrimSpace(dslconfig.EvalStringExpr(op.NameExpr, meta))
 		if name == "" {
 			continue
 		}
 		switch strings.ToLower(strings.TrimSpace(op.Op)) {
 		case "header_set":
-			h.Set(name, evalHeaderExpr(op.ValueExpr, meta))
+			h.Set(name, dslconfig.EvalStringExpr(op.ValueExpr, meta))
 		case "header_del":
 			h.Del(name)
 		}
 	}
-}
-
-func evalHeaderExpr(expr string, meta *dslmeta.Meta) string {
-	raw := strings.TrimSpace(expr)
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
-		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")
-		parts := splitTopLevelArgs(inner)
-		var b strings.Builder
-		for _, p := range parts {
-			b.WriteString(evalHeaderExpr(p, meta))
-		}
-		return b.String()
-	}
-	if strings.HasPrefix(raw, "\"") && strings.HasSuffix(raw, "\"") {
-		v, err := strconv.Unquote(raw)
-		if err == nil {
-			return v
-		}
-		return raw
-	}
-	switch raw {
-	case "$channel.base_url":
-		if meta != nil {
-			return meta.BaseURL
-		}
-	case "$channel.key":
-		if meta != nil {
-			return meta.APIKey
-		}
-	case "$oauth.access_token":
-		if meta != nil {
-			return meta.OAuthAccessToken
-		}
-	case "$request.model":
-		if meta != nil {
-			return meta.OriginModelName
-		}
-	case "$request.model_mapped":
-		if meta != nil {
-			if meta.DSLModelMapped != "" {
-				return meta.DSLModelMapped
-			}
-			return meta.OriginModelName
-		}
-	}
-	return raw
-}
-
-func splitTopLevelArgs(s string) []string {
-	var parts []string
-	var b strings.Builder
-	depth := 0
-	inString := false
-	escaped := false
-	flush := func() {
-		part := strings.TrimSpace(b.String())
-		if part != "" {
-			parts = append(parts, part)
-		}
-		b.Reset()
-	}
-	for _, r := range s {
-		ch := byte(r)
-		if escaped {
-			b.WriteByte(ch)
-			escaped = false
-			continue
-		}
-		if ch == '\\' && inString {
-			b.WriteByte(ch)
-			escaped = true
-			continue
-		}
-		if ch == '"' {
-			inString = !inString
-			b.WriteByte(ch)
-			continue
-		}
-		if !inString {
-			switch ch {
-			case '(':
-				depth++
-			case ')':
-				if depth > 0 {
-					depth--
-				}
-			case ',':
-				if depth == 0 {
-					flush()
-					continue
-				}
-			}
-		}
-		b.WriteByte(ch)
-	}
-	flush()
-	return parts
 }
 
 func resolveBaseURLFromExpr(expr string) string {

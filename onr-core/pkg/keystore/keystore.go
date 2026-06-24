@@ -29,6 +29,8 @@ type Key struct {
 	Name            string `yaml:"name"`
 	Value           string `yaml:"value"`
 	BaseURLOverride string `yaml:"base_url_override"`
+	CredentialFile  string `yaml:"credential_file"`
+	Location        string `yaml:"location"`
 }
 
 type AccessKey struct {
@@ -71,20 +73,26 @@ func Load(path string) (*Store, error) {
 		for i, k := range v.Keys {
 			k.Name = strings.TrimSpace(k.Name)
 			k.BaseURLOverride = strings.TrimSpace(k.BaseURLOverride)
+			k.CredentialFile = strings.TrimSpace(k.CredentialFile)
+			k.Location = normalizeLocation(k.Location)
 
 			raw := strings.TrimSpace(k.Value)
 			if envVal := strings.TrimSpace(os.Getenv(envVarForUpstreamKey(p, k.Name, i))); envVal != "" {
 				raw = envVal
 			}
-			if raw == "" {
+			if raw == "" && k.CredentialFile == "" {
 				continue
 			}
 
-			val, err := decryptIfNeeded(raw)
-			if err != nil {
-				return nil, fmt.Errorf("invalid key value for provider=%s name=%q: %w", p, k.Name, err)
+			if raw != "" {
+				val, err := decryptIfNeeded(raw)
+				if err != nil {
+					return nil, fmt.Errorf("invalid key value for provider=%s name=%q: %w", p, k.Name, err)
+				}
+				k.Value = val
+			} else {
+				k.Value = ""
 			}
-			k.Value = val
 			keys = append(keys, k)
 		}
 		if len(keys) > 0 {
@@ -177,6 +185,10 @@ func (s *Store) HasProvider(provider string) bool {
 }
 
 func normalizeProvider(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+func normalizeLocation(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 

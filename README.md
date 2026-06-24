@@ -378,6 +378,23 @@ Example:
 
 - `providers.openai.keys[0].name: key1` -> `ONR_UPSTREAM_KEY_OPENAI_KEY1`
 
+### Vertex AI service account file
+
+Vertex AI provider keys can use a local GCP service account JSON file instead of `value`:
+
+```yaml
+providers:
+  vertex:
+    keys:
+      - name: "vertex-sa"
+        credential_file: "/etc/onr/gcp/vertex-sa.json"
+        location: "global" # or us-central1
+```
+
+`location` defaults to `global` when a credential file is configured. For regional locations, ONR derives
+`https://<location>-aiplatform.googleapis.com` unless `base_url_override` is set.
+Keep the credential file readable only by the ONR runtime user, for example `chmod 600 /etc/onr/gcp/vertex-sa.json`.
+
 ## Access Keys (keys.yaml: access_keys)
 
 `keys.yaml` can also contain access keys for clients:

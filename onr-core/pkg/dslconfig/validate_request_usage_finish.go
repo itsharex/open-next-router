@@ -2,6 +2,7 @@ package dslconfig
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -19,6 +20,9 @@ func validateProviderRequestTransform(path, providerName string, req ProviderReq
 }
 
 func validateRequestTransform(path, providerName, scope string, t RequestTransform) error {
+	if err := validateModelMapConfig(path, providerName, scope+".model_map", t.ModelMap); err != nil {
+		return err
+	}
 	if err := validateRequestJSONOps(path, providerName, scope, t.JSONOps); err != nil {
 		return err
 	}
@@ -50,6 +54,20 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 	}
 }
 
+func validateModelMapConfig(path, providerName, scope string, cfg ModelMapConfig) error {
+	for from, expr := range cfg.Map {
+		if err := ValidateStringExpr(expr); err != nil {
+			return fmt.Errorf("provider %q in %q: %s[%q] invalid expression: %w", providerName, path, scope, from, err)
+		}
+	}
+	if strings.TrimSpace(cfg.DefaultExpr) != "" {
+		if err := ValidateStringExpr(cfg.DefaultExpr); err != nil {
+			return fmt.Errorf("provider %q in %q: %s_default invalid expression: %w", providerName, path, scope, err)
+		}
+	}
+	return nil
+}
+
 func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) error {
 	for i, op := range ops {
 		opScope := fmt.Sprintf("%s.json_op[%d]", scope, i)
@@ -67,6 +85,11 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 		case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if op.Op == jsonOpSet || op.Op == jsonOpReplace || op.Op == jsonOpSetIfAbsent {
+				if err := validateJSONValueExpr(op.ValueExpr); err != nil {
+					return fmt.Errorf("provider %q in %q: %s invalid value expression: %w", providerName, path, opScope, err)
+				}
 			}
 		case jsonOpDelIfMissing:
 			if _, err := parseObjectPath(op.Path); err != nil {
@@ -101,6 +124,24 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 		}
 	}
 	return nil
+}
+
+func validateJSONValueExpr(expr string) error {
+	raw := strings.TrimSpace(expr)
+	if raw == "" {
+		return fmt.Errorf("expression is empty")
+	}
+	switch raw {
+	case "true", "false", "null":
+		return nil
+	}
+	if isQuotedStringExpr(raw) {
+		return nil
+	}
+	if _, err := strconv.Atoi(raw); err == nil {
+		return nil
+	}
+	return ValidateStringExpr(raw)
 }
 
 func validateProviderUsage(path, providerName string, usage ProviderUsage, registry usageModeRegistry) (ProviderUsage, error) {

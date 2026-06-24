@@ -147,6 +147,48 @@ provider "templated" {
 	}
 }
 
+func TestSetPathTemplate_AppliesCredentialAndChannelVariables(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "vertex" {
+  defaults {
+    upstream_config {
+      base_url = "https://aiplatform.googleapis.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+    }
+  }
+}
+`
+	pf, hasProvider, err := validateAndBuildProviderFile("vertex.conf", conf, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("validateAndBuildProviderFile: %v", err)
+	}
+	if !hasProvider {
+		t.Fatalf("expected provider")
+	}
+
+	m := &dslmeta.Meta{
+		API:                 "chat.completions",
+		OriginModelName:     "gemini-2.5-flash",
+		DSLModelMapped:      "gemini-2.5-flash-001",
+		CredentialProjectID: "proj-1",
+		ChannelLocation:     "us-central1",
+		RequestURLPath:      "/v1/chat/completions",
+	}
+	if err := pf.Routing.Apply(m); err != nil {
+		t.Fatalf("routing.Apply: %v", err)
+	}
+	if m.RequestURLPath != "/v1/projects/proj-1/locations/us-central1/publishers/google/models/gemini-2.5-flash-001:generateContent" {
+		t.Fatalf("unexpected RequestURLPath: %q", m.RequestURLPath)
+	}
+}
+
 func TestSetPathTemplate_RejectsUnknownVariable(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";

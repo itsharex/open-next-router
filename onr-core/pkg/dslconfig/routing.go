@@ -99,6 +99,11 @@ func (p *ProviderRouting) selectMatch(api string, stream bool) (RoutingMatch, bo
 }
 
 func evalStringExpr(expr string, meta *dslmeta.Meta) string {
+	return EvalStringExpr(expr, meta)
+}
+
+// EvalStringExpr evaluates a DSL string expression against request/channel metadata.
+func EvalStringExpr(expr string, meta *dslmeta.Meta) string {
 	raw := strings.TrimSpace(expr)
 	if raw == "" {
 		return ""
@@ -116,7 +121,7 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 		parts := splitTopLevelArgs(inner)
 		var b strings.Builder
 		for _, p := range parts {
-			b.WriteString(evalStringExpr(p, meta))
+			b.WriteString(EvalStringExpr(p, meta))
 		}
 		return b.String()
 	}
@@ -128,6 +133,10 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 		return meta.BaseURL
 	case exprChannelKey:
 		return meta.APIKey
+	case exprChannelLocation:
+		return meta.ChannelLocation
+	case exprCredentialProjID:
+		return meta.CredentialProjectID
 	case exprOAuthAccessToken:
 		return meta.OAuthAccessToken
 	case exprRequestModel:
@@ -162,7 +171,7 @@ func evalTemplateString(tmpl string, meta *dslmeta.Meta) string {
 		}
 		name := strings.TrimSpace(tmpl[i+2 : i+2+end])
 		if expr, ok := normalizeTemplateVariable(name); ok {
-			b.WriteString(evalStringExpr(expr, meta))
+			b.WriteString(EvalStringExpr(expr, meta))
 		}
 		i += 2 + end + 1
 	}
@@ -185,7 +194,7 @@ func normalizeTemplateVariable(name string) (string, bool) {
 
 func isBuiltinStringVariable(expr string) bool {
 	switch strings.TrimSpace(expr) {
-	case exprChannelBaseURL, exprChannelKey, exprOAuthAccessToken, exprRequestModel, exprRequestMapped:
+	case exprChannelBaseURL, exprChannelKey, exprChannelLocation, exprCredentialProjID, exprOAuthAccessToken, exprRequestModel, exprRequestMapped:
 		return true
 	default:
 		return false
@@ -204,7 +213,7 @@ func splitTopLevelArgs(s string) []string {
 	var parts []string
 	var b strings.Builder
 	depth := 0
-	inString := false
+	var quote byte
 	escaped := false
 	flush := func() {
 		p := strings.TrimSpace(b.String())
@@ -215,7 +224,7 @@ func splitTopLevelArgs(s string) []string {
 	}
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
-		if inString {
+		if quote != 0 {
 			b.WriteByte(ch)
 			if escaped {
 				escaped = false
@@ -225,14 +234,14 @@ func splitTopLevelArgs(s string) []string {
 				escaped = true
 				continue
 			}
-			if ch == '"' {
-				inString = false
+			if ch == quote {
+				quote = 0
 			}
 			continue
 		}
 		switch ch {
-		case '"':
-			inString = true
+		case '"', '\'':
+			quote = ch
 			b.WriteByte(ch)
 		case '(':
 			depth++

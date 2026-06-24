@@ -115,6 +115,118 @@ provider "openai" {
 	}
 }
 
+func TestValidateProviderFile_OAuthGoogleServiceAccountOK(t *testing.T) {
+	t.Parallel()
+
+	path := writeProviderFile(t, "vertex.conf", `
+provider "vertex" {
+  defaults {
+    upstream_config { base_url = "https://aiplatform.googleapis.com"; }
+    auth {
+      oauth_mode google_service_account_file;
+      oauth_scope "https://www.googleapis.com/auth/cloud-platform";
+      auth_oauth_bearer;
+    }
+  }
+}
+`)
+	if _, err := ValidateProviderFile(path); err != nil {
+		t.Fatalf("validate err=%v", err)
+	}
+}
+
+func TestOAuthGoogleServiceAccountResolve(t *testing.T) {
+	t.Parallel()
+
+	cfg := OAuthConfig{
+		Mode:      oauthModeGoogleSA,
+		ScopeExpr: `"https://www.googleapis.com/auth/cloud-platform"`,
+	}
+	meta := &dslmeta.Meta{
+		CredentialJSON: `{"project_id":"proj-1","client_email":"svc@example.com","private_key":"redacted","private_key_id":"kid-1","token_uri":"https://token.example.com"}`,
+	}
+	resolved, ok := cfg.Resolve(meta)
+	if !ok {
+		t.Fatalf("resolve oauth should succeed")
+	}
+	if resolved.Mode != oauthModeGoogleSA {
+		t.Fatalf("mode=%q", resolved.Mode)
+	}
+	if resolved.Scope != "https://www.googleapis.com/auth/cloud-platform" {
+		t.Fatalf("scope=%q", resolved.Scope)
+	}
+	if resolved.ServiceAccountCredentialJSON == "" {
+		t.Fatalf("expected credential json")
+	}
+	if _, exists := resolved.Form["refresh_token"]; exists {
+		t.Fatalf("service account mode should not use refresh_token form")
+	}
+}
+
+func TestValidateProviderFile_GoogleServiceAccountRequiresScope(t *testing.T) {
+	t.Parallel()
+
+	path := writeProviderFile(t, "vertex.conf", `
+provider "vertex" {
+  defaults {
+    upstream_config { base_url = "https://aiplatform.googleapis.com"; }
+    auth {
+      oauth_mode google_service_account_file;
+      auth_oauth_bearer;
+    }
+  }
+}
+`)
+	_, err := ValidateProviderFile(path)
+	if err == nil || !strings.Contains(err.Error(), "oauth_scope is required") {
+		t.Fatalf("ValidateProviderFile err=%v, want oauth_scope required", err)
+	}
+}
+
+func TestResolvedOAuthConfigCacheIdentity_GoogleServiceAccountNoCrossUse(t *testing.T) {
+	t.Parallel()
+
+	base := ResolvedOAuthConfig{
+		Mode:                         oauthModeGoogleSA,
+		Method:                       "POST",
+		ContentType:                  "form",
+		TokenURL:                     "https://oauth2.googleapis.com/token",
+		TokenPath:                    "$.access_token",
+		ExpiresInPath:                "$.expires_in",
+		TokenTypePath:                "$.token_type",
+		TimeoutMs:                    5000,
+		RefreshSkewSec:               300,
+		FallbackTTLSec:               1800,
+		Scope:                        "scope-a",
+		ServiceAccountCredentialJSON: `{"project_id":"proj-1","client_email":"svc@example.com","private_key":"redacted-a","private_key_id":"kid-1","token_uri":"https://token.example.com/a"}`,
+	}
+	same := base
+	if base.CacheIdentity() != same.CacheIdentity() {
+		t.Fatalf("same service account config should have stable cache identity")
+	}
+
+	otherCredential := base
+	otherCredential.ServiceAccountCredentialJSON = `{"project_id":"proj-2","client_email":"svc2@example.com","private_key":"redacted-b","private_key_id":"kid-2","token_uri":"https://token.example.com/a"}`
+	if base.CacheIdentity() == otherCredential.CacheIdentity() {
+		t.Fatalf("cache identity should change when credential content changes")
+	}
+
+	otherScope := base
+	otherScope.Scope = "scope-b"
+	if base.CacheIdentity() == otherScope.CacheIdentity() {
+		t.Fatalf("cache identity should change when scope changes")
+	}
+
+	otherTokenURI := base
+	otherTokenURI.ServiceAccountCredentialJSON = `{"project_id":"proj-1","client_email":"svc@example.com","private_key":"redacted-a","private_key_id":"kid-1","token_uri":"https://token.example.com/b"}`
+	if base.CacheIdentity() == otherTokenURI.CacheIdentity() {
+		t.Fatalf("cache identity should change when token_uri changes")
+	}
+	if strings.Contains(base.CacheIdentity(), "redacted") || strings.Contains(base.CacheIdentity(), "svc@example.com") {
+		t.Fatalf("cache identity should not contain credential material: %q", base.CacheIdentity())
+	}
+}
+
 func writeProviderFile(t *testing.T, name string, content string) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -115,7 +115,7 @@ func TestDirectiveArgEnumValuesInBlock(t *testing.T) {
 }
 
 func TestMetadata_ModeOptionsConsistency(t *testing.T) {
-	assertSetEqual(t, "oauth_mode", ModesByDirective("oauth_mode"), []string{"openai", "gemini", "qwen", "claude", "iflow", "antigravity", "kimi", "custom"})
+	assertSetEqual(t, "oauth_mode", ModesByDirective("oauth_mode"), []string{"openai", "gemini", "qwen", "claude", "iflow", "antigravity", "kimi", "google_service_account_file", "custom"})
 	assertSetEqual(t, "balance_mode", ModesByDirective("balance_mode"), []string{"openai", "custom"})
 	assertSetEqual(t, "models_mode", ModesByDirective("models_mode"), []string{"openai", "gemini", "custom"})
 	assertSetEqual(t, "usage_extract", ModesByDirective("usage_extract"), []string{"custom"})

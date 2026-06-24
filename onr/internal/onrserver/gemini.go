@@ -87,6 +87,8 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, req
 		kname := ""
 		kval := ""
 		kbase := ""
+		kcredFile := ""
+		klocation := ""
 		if uk := auth.TokenUpstreamKey(c); uk != "" {
 			kname = "byok"
 			kval = uk
@@ -100,12 +102,16 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, req
 			kname = k.Name
 			kval = k.Value
 			kbase = k.BaseURLOverride
+			kcredFile = k.CredentialFile
+			klocation = k.Location
 		}
 
 		res, perr := pclient.ProxyJSON(c, provider, proxy.ProviderKey{
 			Name:            kname,
 			Value:           kval,
 			BaseURLOverride: kbase,
+			CredentialFile:  kcredFile,
+			Location:        klocation,
 		}, api, stream)
 		if perr != nil {
 			writeOpenAIError(c, requestIDHeaderKey, "proxy_error", perr.Error())

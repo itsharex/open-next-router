@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -94,6 +95,10 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 	if err != nil {
 		return err
 	}
+	api := strings.TrimSpace(opts.api)
+	if api == "" {
+		api = "chat.completions"
+	}
 
 	var ks *keystore.Store
 	needKeyLookup := strings.TrimSpace(opts.upstreamKey) == "" || strings.TrimSpace(opts.baseURLOv) == ""
@@ -127,11 +132,22 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 			continue
 		}
 
-		key, baseURL := resolveProviderKeyAndBaseURL(ks, p, strings.TrimSpace(opts.upstreamKey), strings.TrimSpace(opts.baseURLOv))
+		keyCfg, metaErr := resolveProviderKeyConfig(ks, p, strings.TrimSpace(opts.upstreamKey), strings.TrimSpace(opts.baseURLOv))
+		if metaErr != nil {
+			fail++
+			fmt.Printf("provider=%s error=%q\n", p, metaErr.Error())
+			if opts.failFast {
+				return metaErr
+			}
+			continue
+		}
 		meta := dslmeta.Meta{
-			API:      strings.TrimSpace(opts.api),
-			IsStream: opts.stream,
-			APIKey:   key,
+			API:                 api,
+			IsStream:            opts.stream,
+			APIKey:              keyCfg.APIKey,
+			CredentialFile:      keyCfg.CredentialFile,
+			CredentialProjectID: keyCfg.CredentialProjectID,
+			ChannelLocation:     keyCfg.Location,
 		}
 
 		if err := prepareOAuthForModels(oauth, p, &pf, &meta); err != nil {
@@ -148,8 +164,8 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 			Provider: p,
 			File:     pf,
 			Meta:     &meta,
-			BaseURL:  baseURL,
-			APIKey:   key,
+			BaseURL:  keyCfg.BaseURL,
+			APIKey:   keyCfg.APIKey,
 			DebugOut: debugOut,
 		})
 		cancel()
@@ -174,26 +190,68 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 	return nil
 }
 
-func resolveProviderKeyAndBaseURL(ks *keystore.Store, provider, keyIn, baseURLIn string) (string, string) {
-	key := strings.TrimSpace(keyIn)
-	baseURL := strings.TrimSpace(baseURLIn)
-	if ks == nil {
-		return key, baseURL
+type providerKeyConfig struct {
+	APIKey              string
+	BaseURL             string
+	CredentialFile      string
+	CredentialProjectID string
+	Location            string
+}
+
+func resolveProviderKeyConfig(ks *keystore.Store, provider, keyIn, baseURLIn string) (providerKeyConfig, error) {
+	out := providerKeyConfig{
+		APIKey:  strings.TrimSpace(keyIn),
+		BaseURL: strings.TrimSpace(baseURLIn),
 	}
-	if key != "" && baseURL != "" {
-		return key, baseURL
+	if ks == nil {
+		return out, nil
 	}
 	next, found := ks.NextKey(provider)
 	if !found {
-		return key, baseURL
+		return out, nil
 	}
-	if key == "" {
-		key = strings.TrimSpace(next.Value)
+	if out.APIKey == "" {
+		out.APIKey = strings.TrimSpace(next.Value)
 	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(next.BaseURLOverride)
+	if out.BaseURL == "" {
+		out.BaseURL = strings.TrimSpace(next.BaseURLOverride)
 	}
-	return key, baseURL
+	out.CredentialFile = strings.TrimSpace(next.CredentialFile)
+	out.Location = strings.TrimSpace(next.Location)
+	if out.CredentialFile != "" {
+		if out.Location == "" {
+			out.Location = "global"
+		}
+		projectID, err := credentialProjectIDFromFile(out.CredentialFile)
+		if err != nil {
+			return providerKeyConfig{}, err
+		}
+		out.CredentialProjectID = projectID
+	}
+	return out, nil
+}
+
+func credentialProjectIDFromFile(path string) (string, error) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return "", nil
+	}
+	// #nosec G304 -- path is provided by trusted keys.yaml.
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return "", fmt.Errorf("read credential file: %w", err)
+	}
+	var payload struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", fmt.Errorf("parse credential file: %w", err)
+	}
+	projectID := strings.TrimSpace(payload.ProjectID)
+	if projectID == "" {
+		return "", errors.New("credential file missing project_id")
+	}
+	return projectID, nil
 }
 
 // prepareOAuthForModels requires non-nil client, provider file, and meta.
@@ -208,19 +266,23 @@ func prepareOAuthForModels(client *oauthclient.Client, provider string, pf *dslc
 	}
 	cacheKey := buildOAuthCacheKey(provider, resolved.CacheIdentity(), meta.APIKey)
 	tok, err := client.GetToken(context.Background(), oauthclient.AcquireInput{
-		CacheKey:          cacheKey,
-		TokenURL:          resolved.TokenURL,
-		Method:            resolved.Method,
-		ContentType:       resolved.ContentType,
-		Form:              resolved.Form,
-		BasicAuthUsername: resolved.BasicAuthUsername,
-		BasicAuthPassword: resolved.BasicAuthPassword,
-		TokenPath:         resolved.TokenPath,
-		ExpiresInPath:     resolved.ExpiresInPath,
-		TokenTypePath:     resolved.TokenTypePath,
-		Timeout:           time.Duration(resolved.TimeoutMs) * time.Millisecond,
-		RefreshSkew:       time.Duration(resolved.RefreshSkewSec) * time.Second,
-		FallbackTTL:       time.Duration(resolved.FallbackTTLSec) * time.Second,
+		CacheKey:                     cacheKey,
+		Mode:                         resolved.Mode,
+		TokenURL:                     resolved.TokenURL,
+		Method:                       resolved.Method,
+		ContentType:                  resolved.ContentType,
+		Form:                         resolved.Form,
+		ServiceAccountCredentialFile: resolved.ServiceAccountCredentialFile,
+		ServiceAccountCredentialJSON: resolved.ServiceAccountCredentialJSON,
+		ServiceAccountScope:          resolved.Scope,
+		BasicAuthUsername:            resolved.BasicAuthUsername,
+		BasicAuthPassword:            resolved.BasicAuthPassword,
+		TokenPath:                    resolved.TokenPath,
+		ExpiresInPath:                resolved.ExpiresInPath,
+		TokenTypePath:                resolved.TokenTypePath,
+		Timeout:                      time.Duration(resolved.TimeoutMs) * time.Millisecond,
+		RefreshSkew:                  time.Duration(resolved.RefreshSkewSec) * time.Second,
+		FallbackTTL:                  time.Duration(resolved.FallbackTTLSec) * time.Second,
 	})
 	if err != nil {
 		return err

@@ -107,7 +107,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "auth_bearer", Block: "auth", Hover: "`auth_bearer;`\n\nSets `Authorization: Bearer <channel.key>`."},
 	{Name: "auth_header_key", Block: "auth", Hover: "`auth_header_key <Header-Name>;`\n\nSets `<Header-Name>: <channel.key>`."},
 	{Name: "auth_oauth_bearer", Block: "auth", Hover: "`auth_oauth_bearer;`\n\nSets `Authorization: Bearer <oauth.access_token>`."},
-	{Name: "oauth_mode", Block: "auth", Hover: "`oauth_mode <mode>;`\n\nEnable OAuth token fetch mode for upstream auth.", Modes: []string{"openai", "gemini", "qwen", "claude", "iflow", "antigravity", "kimi", "custom"}},
+	{Name: "oauth_mode", Block: "auth", Hover: "`oauth_mode <mode>;`\n\nEnable OAuth token fetch mode for upstream auth.", Modes: []string{"openai", "gemini", "qwen", "claude", "iflow", "antigravity", "kimi", "google_service_account_file", "custom"}},
 	{Name: "oauth_token_url", Block: "auth", Hover: "`oauth_token_url <expr>;`\n\nOverrides token endpoint URL (typically with `oauth_mode custom`)."},
 	{Name: "oauth_client_id", Block: "auth", Hover: "`oauth_client_id <expr>;`\n\nSets OAuth client id expression for token exchange."},
 	{Name: "oauth_client_secret", Block: "auth", Hover: "`oauth_client_secret <expr>;`\n\nSets OAuth client secret expression for token exchange."},

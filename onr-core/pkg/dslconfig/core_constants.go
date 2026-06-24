@@ -3,6 +3,8 @@ package dslconfig
 const (
 	exprChannelBaseURL   = "$channel.base_url"
 	exprChannelKey       = "$channel.key"
+	exprChannelLocation  = "$channel.location"
+	exprCredentialProjID = "$credential.project_id"
 	exprOAuthAccessToken = "$oauth.access_token"
 	exprRequestModel     = "$request.model"
 	exprRequestMapped    = "$request.model_mapped"

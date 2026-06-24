@@ -117,6 +117,43 @@ provider "demo" {
 	}
 }
 
+func TestValidateProviderFile_ModelsBlock_TemplatePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    models {
+      models_mode custom;
+      path template("/v1/projects/${credential.project_id}/locations/${channel.location}/models");
+      id_path "$.models[*].name";
+      id_regex "^projects/[^/]+/locations/[^/]+/models/(.+)$";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Models.Select(nil)
+	if !ok {
+		t.Fatalf("expected models config selected")
+	}
+	wantPath := `template("/v1/projects/${credential.project_id}/locations/${channel.location}/models")`
+	if got := cfg.Path; got != wantPath {
+		t.Fatalf("models path=%q want=%q", got, wantPath)
+	}
+}
+
 func TestExtractModelIDs_GeminiRewriteAndAllow(t *testing.T) {
 	cfg := ModelsQueryConfig{
 		Mode:         modelsModeGemini,

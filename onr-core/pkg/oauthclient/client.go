@@ -3,9 +3,15 @@ package oauthclient
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -20,19 +26,35 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
+const (
+	modeGoogleServiceAccountFile = "google_service_account_file"
+	defaultGoogleTokenURI        = "https://oauth2.googleapis.com/token"
+)
+
 type Token struct {
 	AccessToken string
 	TokenType   string
 	ExpiresAt   time.Time
 }
 
+type ServiceAccountCredentialInfo struct {
+	ProjectID   string
+	ClientEmail string
+	TokenURI    string
+}
+
 type AcquireInput struct {
 	CacheKey string
 
+	Mode        string
 	TokenURL    string
 	Method      string
 	ContentType string // form|json
 	Form        map[string]string
+
+	ServiceAccountCredentialFile string
+	ServiceAccountCredentialJSON string
+	ServiceAccountScope          string
 
 	BasicAuthUsername string
 	BasicAuthPassword string
@@ -91,7 +113,7 @@ func (c *Client) GetToken(ctx context.Context, in AcquireInput) (Token, error) {
 	if key == "" {
 		return Token{}, errors.New("oauth cache key is empty")
 	}
-	if strings.TrimSpace(in.TokenURL) == "" {
+	if strings.TrimSpace(in.TokenURL) == "" && !in.usesServiceAccount() {
 		return Token{}, errors.New("oauth token url is empty")
 	}
 	if strings.TrimSpace(in.Method) == "" {
@@ -181,7 +203,7 @@ func (c *Client) requestToken(ctx context.Context, in AcquireInput) (Token, erro
 	method := strings.ToUpper(strings.TrimSpace(in.Method))
 	target := strings.TrimSpace(in.TokenURL)
 
-	body, contentType, values, err := buildBody(method, strings.ToLower(strings.TrimSpace(in.ContentType)), in.Form)
+	body, contentType, values, target, err := buildOAuthRequestBody(method, strings.ToLower(strings.TrimSpace(in.ContentType)), target, in)
 	if err != nil {
 		return Token{}, err
 	}
@@ -223,7 +245,7 @@ func (c *Client) requestToken(ctx context.Context, in AcquireInput) (Token, erro
 		return Token{}, err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return Token{}, fmt.Errorf("oauth token endpoint failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		return Token{}, fmt.Errorf("oauth token endpoint failed: status=%d", resp.StatusCode)
 	}
 
 	var root map[string]any
@@ -257,6 +279,160 @@ func (c *Client) requestToken(ctx context.Context, in AcquireInput) (Token, erro
 		TokenType:   tokenType,
 		ExpiresAt:   time.Now().Add(time.Duration(expiresIn) * time.Second),
 	}, nil
+}
+
+func (in AcquireInput) usesServiceAccount() bool {
+	return strings.EqualFold(strings.TrimSpace(in.Mode), modeGoogleServiceAccountFile)
+}
+
+func buildOAuthRequestBody(method string, contentType string, tokenURL string, in AcquireInput) (io.Reader, string, url.Values, string, error) {
+	if in.usesServiceAccount() {
+		return buildServiceAccountJWTBearerBody(method, tokenURL, in)
+	}
+	body, bodyContentType, values, err := buildBody(method, contentType, in.Form)
+	return body, bodyContentType, values, tokenURL, err
+}
+
+func buildServiceAccountJWTBearerBody(method string, tokenURL string, in AcquireInput) (io.Reader, string, url.Values, string, error) {
+	if strings.ToUpper(strings.TrimSpace(method)) != http.MethodPost {
+		return nil, "", nil, "", fmt.Errorf("unsupported oauth method %q for google service account", method)
+	}
+	cred, err := loadServiceAccountCredential(in.ServiceAccountCredentialFile, in.ServiceAccountCredentialJSON)
+	if err != nil {
+		return nil, "", nil, "", err
+	}
+	target := strings.TrimSpace(cred.TokenURI)
+	if target == "" {
+		target = strings.TrimSpace(tokenURL)
+	}
+	if target == "" {
+		target = defaultGoogleTokenURI
+	}
+	scope := strings.TrimSpace(in.ServiceAccountScope)
+	if scope == "" {
+		return nil, "", nil, "", errors.New("google service account oauth scope is empty")
+	}
+	assertion, err := signServiceAccountJWT(cred, scope, target, time.Now())
+	if err != nil {
+		return nil, "", nil, "", err
+	}
+	values := url.Values{}
+	values.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+	values.Set("assertion", assertion)
+	return strings.NewReader(values.Encode()), "application/x-www-form-urlencoded", values, target, nil
+}
+
+type serviceAccountCredential struct {
+	ProjectID    string `json:"project_id"`
+	ClientEmail  string `json:"client_email"`
+	PrivateKey   string `json:"private_key"`
+	PrivateKeyID string `json:"private_key_id"`
+	TokenURI     string `json:"token_uri"`
+}
+
+func loadServiceAccountCredential(filePath string, jsonContent string) (serviceAccountCredential, error) {
+	raw := strings.TrimSpace(jsonContent)
+	if raw == "" {
+		path := strings.TrimSpace(filePath)
+		if path == "" {
+			return serviceAccountCredential{}, errors.New("google service account credential is empty")
+		}
+		// #nosec G304 -- path is supplied by trusted local ONR configuration.
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return serviceAccountCredential{}, fmt.Errorf("read google service account credential file: %w", err)
+		}
+		raw = strings.TrimSpace(string(b))
+	}
+	return parseServiceAccountCredential([]byte(raw))
+}
+
+func LoadServiceAccountCredentialInfo(filePath string, jsonContent string) (ServiceAccountCredentialInfo, error) {
+	cred, err := loadServiceAccountCredential(filePath, jsonContent)
+	if err != nil {
+		return ServiceAccountCredentialInfo{}, err
+	}
+	return ServiceAccountCredentialInfo{
+		ProjectID:   strings.TrimSpace(cred.ProjectID),
+		ClientEmail: strings.TrimSpace(cred.ClientEmail),
+		TokenURI:    strings.TrimSpace(cred.TokenURI),
+	}, nil
+}
+
+func ParseServiceAccountCredentialInfo(jsonContent string) (ServiceAccountCredentialInfo, error) {
+	return LoadServiceAccountCredentialInfo("", jsonContent)
+}
+
+func parseServiceAccountCredential(raw []byte) (serviceAccountCredential, error) {
+	var cred serviceAccountCredential
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if err := dec.Decode(&cred); err != nil {
+		return serviceAccountCredential{}, fmt.Errorf("invalid google service account credential json: %w", err)
+	}
+	if strings.TrimSpace(cred.ProjectID) == "" {
+		return serviceAccountCredential{}, errors.New("google service account credential missing project_id")
+	}
+	if strings.TrimSpace(cred.ClientEmail) == "" {
+		return serviceAccountCredential{}, errors.New("google service account credential missing client_email")
+	}
+	if strings.TrimSpace(cred.PrivateKey) == "" {
+		return serviceAccountCredential{}, errors.New("google service account credential missing private_key")
+	}
+	return cred, nil
+}
+
+func signServiceAccountJWT(cred serviceAccountCredential, scope string, audience string, now time.Time) (string, error) {
+	key, err := parseRSAPrivateKey(cred.PrivateKey)
+	if err != nil {
+		return "", err
+	}
+	header := map[string]string{
+		"alg": "RS256",
+		"typ": "JWT",
+	}
+	if kid := strings.TrimSpace(cred.PrivateKeyID); kid != "" {
+		header["kid"] = kid
+	}
+	claims := map[string]any{
+		"iss":   strings.TrimSpace(cred.ClientEmail),
+		"scope": strings.TrimSpace(scope),
+		"aud":   strings.TrimSpace(audience),
+		"iat":   now.Unix(),
+		"exp":   now.Add(time.Hour).Unix(),
+	}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		return "", err
+	}
+	claimsJSON, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+	signingInput := base64.RawURLEncoding.EncodeToString(headerJSON) + "." + base64.RawURLEncoding.EncodeToString(claimsJSON)
+	sum := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
+	if err != nil {
+		return "", fmt.Errorf("sign google service account jwt: %w", err)
+	}
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(sig), nil
+}
+
+func parseRSAPrivateKey(raw string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(raw))
+	if block == nil {
+		return nil, errors.New("invalid google service account private_key pem")
+	}
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, errors.New("google service account private_key is not RSA")
+		}
+		return rsaKey, nil
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	return nil, errors.New("invalid google service account private_key")
 }
 
 func buildBody(method string, contentType string, form map[string]string) (io.Reader, string, url.Values, error) {

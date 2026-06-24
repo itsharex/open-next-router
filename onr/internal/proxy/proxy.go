@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,8 @@ type ProviderKey struct {
 	Name            string
 	Value           string
 	BaseURLOverride string
+	CredentialFile  string
+	Location        string
 }
 
 type Result struct {
@@ -104,6 +107,37 @@ type proxyCtx struct {
 
 func normalizeUpstreamBaseURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
+}
+
+func normalizeProviderLocation(raw string, defaultGlobal bool) string {
+	location := strings.ToLower(strings.TrimSpace(raw))
+	if location == "" && defaultGlobal {
+		return "global"
+	}
+	return location
+}
+
+func credentialProjectIDFromFile(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", nil
+	}
+	// #nosec G304 -- credential file path is supplied by trusted local ONR configuration.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read credential file: %w", err)
+	}
+	var doc struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", errors.New("credential file is not valid JSON")
+	}
+	projectID := strings.TrimSpace(doc.ProjectID)
+	if projectID == "" {
+		return "", errors.New("credential file missing project_id")
+	}
+	return projectID, nil
 }
 
 func (c *Client) ProxyJSON(
@@ -688,11 +722,18 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		OriginModelName:    strings.TrimSpace(model),
 		APIKey:             strings.TrimSpace(key.Value),
 		BaseURL:            normalizeUpstreamBaseURL(key.BaseURLOverride),
+		CredentialFile:     strings.TrimSpace(key.CredentialFile),
+		ChannelLocation:    normalizeProviderLocation(key.Location, strings.TrimSpace(key.CredentialFile) != ""),
 		RequestURLPath:     gc.Request.URL.RequestURI(),
 		RequestContentType: gc.Request.Header.Get("Content-Type"),
 		RequestHeaders:     gc.Request.Header,
 		RequestBody:        bodyBytes,
 		StartTime:          time.Now(),
+	}
+	if projectID, err := credentialProjectIDFromFile(m.CredentialFile); err != nil {
+		return nil, err
+	} else {
+		m.CredentialProjectID = projectID
 	}
 	m.SetRequestRoot(root)
 	if mo := strings.TrimSpace(model); mo != "" {

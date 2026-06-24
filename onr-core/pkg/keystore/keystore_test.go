@@ -97,6 +97,46 @@ access_keys:
 	}
 }
 
+func TestLoad_CredentialFileKeyWithoutValue(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "keys.yaml")
+	if err := os.WriteFile(path, []byte(`
+providers:
+  vertex:
+    keys:
+      - name: "vertex-sa"
+        credential_file: " /etc/onr/vertex-sa.json "
+        location: " US-CENTRAL1 "
+        base_url_override: " https://us-central1-aiplatform.googleapis.com/ "
+access_keys:
+  - name: "client-a"
+    value: "ak-1"
+`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	st, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load err=%v", err)
+	}
+	k, ok := st.NextKey("vertex")
+	if !ok || k == nil {
+		t.Fatalf("expected vertex key")
+	}
+	if k.Value != "" {
+		t.Fatalf("Value=%q want empty", k.Value)
+	}
+	if k.CredentialFile != "/etc/onr/vertex-sa.json" {
+		t.Fatalf("CredentialFile=%q", k.CredentialFile)
+	}
+	if k.Location != "us-central1" {
+		t.Fatalf("Location=%q", k.Location)
+	}
+	if k.BaseURLOverride != "https://us-central1-aiplatform.googleapis.com/" {
+		t.Fatalf("BaseURLOverride=%q", k.BaseURLOverride)
+	}
+}
+
 func TestEnvHelpers(t *testing.T) {
 	if got := normalizeProvider(" OpenAI "); got != "openai" {
 		t.Fatalf("normalizeProvider=%q", got)

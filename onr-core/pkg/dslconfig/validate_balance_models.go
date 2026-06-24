@@ -65,6 +65,9 @@ func validateResolvedBalanceQueryConfig(path, providerName, scope string, cfg Ba
 	if err := validateBalanceExpr(path, providerName, scope, "used_expr", cfg.UsedExpr); err != nil {
 		return err
 	}
+	if err := validateBalanceURLPath(path, providerName, scope, "path", cfg.Path); err != nil {
+		return err
+	}
 	if err := validateCustomBalanceConfig(path, providerName, scope, mode, cfg); err != nil {
 		return err
 	}
@@ -165,10 +168,17 @@ func validateBalanceURLPath(path, providerName, scope, field, value string) erro
 	if v == "" {
 		return nil
 	}
+	if err := ValidatePathOrURLExpr(v); err != nil {
+		return fmt.Errorf("provider %q in %q: %s invalid %s expression: %w", providerName, path, scope, field, err)
+	}
+	return nil
+}
+
+func validateURLPathLiteral(v string) error {
 	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
 		return nil
 	}
-	return fmt.Errorf("provider %q in %q: %s %s must start with / or http(s)://", providerName, path, scope, field)
+	return fmt.Errorf("path must start with / or http(s)://")
 }
 
 func validateBalanceHeaders(path, providerName, scope string, headers []HeaderOp) error {

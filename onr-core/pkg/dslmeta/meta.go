@@ -29,6 +29,18 @@ type Meta struct {
 	// OAuthCacheKey is the runtime cache identity for OAuth token refresh/invalidation.
 	OAuthCacheKey string
 
+	// CredentialFile is the local credential file path used by credential-aware providers.
+	CredentialFile string
+
+	// CredentialJSON is the credential JSON content supplied by the caller.
+	CredentialJSON string
+
+	// CredentialProjectID is the normalized project_id parsed from the credential.
+	CredentialProjectID string
+
+	// ChannelLocation is the provider location/region attached to the selected channel.
+	ChannelLocation string
+
 	// OriginModelName is the original request model.
 	OriginModelName string
 

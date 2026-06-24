@@ -59,6 +59,14 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			want: map[string]any{"model": "gpt-4o-mini"},
 		},
 		{
+			name: "json_set_template_value",
+			in:   map[string]any{"model": "upstream"},
+			ops: []JSONOp{
+				{Op: "json_set", Path: "$.route", ValueExpr: `template("/v1/${request.model}")`},
+			},
+			want: map[string]any{"model": "upstream", "route": "/v1/gpt-4o-mini"},
+		},
+		{
 			name: "json_replace_missing_path_is_noop",
 			in:   map[string]any{"a": 1},
 			ops: []JSONOp{

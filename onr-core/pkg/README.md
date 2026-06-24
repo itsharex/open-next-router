@@ -19,6 +19,7 @@ These packages are intended to be shared by ONR itself and by downstream integra
 | `balancequery` | Reusable balance querying logic driven by DSL configuration. |
 | `dslconfig` | Core DSL parser, validator, selector, JSON ops, and runtime config execution logic. |
 | `dslmeta` | Minimal metadata model consumed by the DSL engine and related helpers. |
+| `dslruntime` | Shared DSL runtime helpers for auth headers and provider route rendering. |
 | `dslspec` | DSL directive metadata used by docs, tooling, and editor integrations. |
 | `httpclient` | Small shared HTTP client abstractions used by reusable runtime helpers. |
 | `jsonutil` | Generic JSON value helpers used across DSL and runtime code. |
