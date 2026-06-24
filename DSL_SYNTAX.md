@@ -1089,9 +1089,9 @@ Template path example:
 ```conf
 models {
   models_mode custom;
-  path template("/v1/projects/${credential.project_id}/locations/${channel.location}/models");
-  id_path "$.models[*].name";
-  id_regex "^projects/[^/]+/locations/[^/]+/models/(.+)$";
+  path "/v1beta1/publishers/google/models";
+  id_path "$.publisherModels[*].name";
+  id_regex "^publishers/google/models/(.+)$";
 }
 ```
 
@@ -1104,6 +1104,10 @@ Semantics:
   - `path /v1beta/models`
   - `id_path $.models[*].name`
   - `id_regex ^models/(.+)$`
+- The default `vertex` preset in `config/modes/models_modes.conf` lists Google publisher base models:
+  - `path /v1beta1/publishers/google/models`
+  - `id_path $.publisherModels[*].name`
+  - `id_regex ^publishers/google/models/(.+)$`
 - `models_mode custom` requires explicit `path` and at least one `id_path`.
 - `id_path` is repeatable; extracted IDs are unioned and deduplicated.
 - `id_regex` rewrites each extracted value:

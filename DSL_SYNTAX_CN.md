@@ -2081,6 +2081,10 @@ Multiple: yes
 
 - `models_mode openai`：默认 `/v1/models`
 - `models_mode gemini`：默认 `/v1beta/models`
+- 默认 `config/modes/models_modes.conf` 里的 `vertex` 预设会查询 Google publisher base models：
+  - `path /v1beta1/publishers/google/models`
+  - `id_path $.publisherModels[*].name`
+  - `id_regex ^publishers/google/models/(.+)$`
 - `models_mode custom`：必填
 - `path` 可以使用 `template("...")`；模板字面量必须以 `/`、`http://` 或 `https://` 开头。
 - 如果省略 `models_mode`，但已经声明了 `path`、`id_path`、`id_regex`、`id_allow_regex` 等自定义查询字段，ONR 会自动按 `models_mode custom;` 处理。

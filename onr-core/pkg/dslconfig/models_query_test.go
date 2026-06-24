@@ -130,9 +130,9 @@ provider "demo" {
     }
     models {
       models_mode custom;
-      path template("/v1/projects/${credential.project_id}/locations/${channel.location}/models");
-      id_path "$.models[*].name";
-      id_regex "^projects/[^/]+/locations/[^/]+/models/(.+)$";
+      path "/v1beta1/publishers/google/models";
+      id_path "$.publisherModels[*].name";
+      id_regex "^publishers/google/models/(.+)$";
     }
   }
 }
@@ -148,7 +148,7 @@ provider "demo" {
 	if !ok {
 		t.Fatalf("expected models config selected")
 	}
-	wantPath := `template("/v1/projects/${credential.project_id}/locations/${channel.location}/models")`
+	wantPath := "/v1beta1/publishers/google/models"
 	if got := cfg.Path; got != wantPath {
 		t.Fatalf("models path=%q want=%q", got, wantPath)
 	}

@@ -45,7 +45,7 @@ func TestRunModelsGetWithOptions_VertexServiceAccount(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"vertex-token","expires_in":3600,"token_type":"Bearer"}`))
-		case "/v1/projects/proj-1/locations/us-central1/models":
+		case "/v1beta1/publishers/google/models":
 			modelsCalls++
 			if got := r.Header.Get("Authorization"); got != "Bearer vertex-token" {
 				t.Fatalf("Authorization=%q", got)
@@ -54,7 +54,7 @@ func TestRunModelsGetWithOptions_VertexServiceAccount(t *testing.T) {
 				t.Fatalf("x-goog-user-project=%q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"models":[{"name":"projects/proj-1/locations/us-central1/models/tuned-gemini"}]}`))
+			_, _ = w.Write([]byte(`{"publisherModels":[{"name":"publishers/google/models/gemini-2.5-flash"}]}`))
 		default:
 			t.Fatalf("unexpected path=%q", r.URL.Path)
 		}
@@ -84,9 +84,9 @@ provider "vertex" {
     }
     models {
       models_mode custom;
-      path template("/v1/projects/${credential.project_id}/locations/${channel.location}/models");
-      id_path "$.models[*].name";
-      id_regex "^projects/[^/]+/locations/[^/]+/models/(.+)$";
+      path "/v1beta1/publishers/google/models";
+      id_path "$.publisherModels[*].name";
+      id_regex "^publishers/google/models/(.+)$";
     }
   }
 }
@@ -132,7 +132,7 @@ providers:
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
-	if got := strings.TrimSpace(string(body)); got != "tuned-gemini" {
+	if got := strings.TrimSpace(string(body)); got != "gemini-2.5-flash" {
 		t.Fatalf("stdout=%q", got)
 	}
 	if tokenCalls != 1 {

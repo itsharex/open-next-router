@@ -126,7 +126,7 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 
 func TestQuery_EvaluatesTemplateModelsPath(t *testing.T) {
 	fakeClient := httpclienttest.NewFakeDoer(t,
-		httpclienttest.NewStringResponse(http.StatusOK, `{"models":[{"name":"projects/vertex-project/locations/us-central1/models/tuned-gemini"}]}`),
+		httpclienttest.NewStringResponse(http.StatusOK, `{"publisherModels":[{"name":"publishers/google/models/gemini-2.5-flash"}]}`),
 	)
 
 	pf := dslconfig.ProviderFile{
@@ -134,9 +134,9 @@ func TestQuery_EvaluatesTemplateModelsPath(t *testing.T) {
 			Defaults: dslconfig.ModelsQueryConfig{
 				Mode:    "custom",
 				Method:  "GET",
-				Path:    `template("/v1/projects/${credential.project_id}/locations/${channel.location}/models")`,
-				IDPaths: []string{"$.models[*].name"},
-				IDRegex: `^projects/[^/]+/locations/[^/]+/models/(.+)$`,
+				Path:    "/v1beta1/publishers/google/models",
+				IDPaths: []string{"$.publisherModels[*].name"},
+				IDRegex: `^publishers/google/models/(.+)$`,
 				Headers: []dslconfig.HeaderOp{
 					{
 						Op:        "header_set",
@@ -161,14 +161,14 @@ func TestQuery_EvaluatesTemplateModelsPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
-	if len(result.IDs) != 1 || result.IDs[0] != "tuned-gemini" {
+	if len(result.IDs) != 1 || result.IDs[0] != "gemini-2.5-flash" {
 		t.Fatalf("ids=%v", result.IDs)
 	}
 	reqs := fakeClient.Requests()
 	if len(reqs) != 1 {
 		t.Fatalf("requests=%d", len(reqs))
 	}
-	wantURL := "https://aiplatform.googleapis.com/v1/projects/vertex-project/locations/us-central1/models"
+	wantURL := "https://aiplatform.googleapis.com/v1beta1/publishers/google/models"
 	if got := reqs[0].URL.String(); got != wantURL {
 		t.Fatalf("request url=%q want=%q", got, wantURL)
 	}
