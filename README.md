@@ -389,10 +389,14 @@ providers:
       - name: "vertex-sa"
         credential_file: "/etc/onr/gcp/vertex-sa.json"
         location: "global" # or us-central1
+        # For regional Vertex endpoints, set base_url_override explicitly.
+        # base_url_override: "https://us-central1-aiplatform.googleapis.com"
 ```
 
-`location` defaults to `global` when a credential file is configured. For regional locations, ONR derives
-`https://<location>-aiplatform.googleapis.com` unless `base_url_override` is set.
+`location` defaults to `global` when a credential file is configured. The `location` value is exposed to
+provider DSL as `$channel.location` and is used by the bundled Vertex path templates. ONR does not derive a
+regional Vertex host from `location`; for regional Vertex endpoints, set `base_url_override` explicitly, for
+example `https://us-central1-aiplatform.googleapis.com`.
 Keep the credential file readable only by the ONR runtime user, for example `chmod 600 /etc/onr/gcp/vertex-sa.json`.
 
 ## Access Keys (keys.yaml: access_keys)
