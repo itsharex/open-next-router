@@ -10,6 +10,30 @@ type EventDataHandler interface {
 	OnSSEEventDataJSON(event string, payload []byte) error
 }
 
+type SSEEventHandlerChain struct {
+	handlers []EventDataHandler
+}
+
+func NewSSEEventHandlerChain(handlers ...EventDataHandler) *SSEEventHandlerChain {
+	chain := &SSEEventHandlerChain{}
+	chain.handlers = append(chain.handlers, handlers...)
+	return chain
+
+}
+
+func (h *SSEEventHandlerChain) OnSSEEventDataJSON(event string, payload []byte) error {
+	if h == nil {
+		return nil
+	}
+	for _, handler := range h.handlers {
+		if handler == nil {
+			continue
+		}
+		_ = handler.OnSSEEventDataJSON(event, payload)
+	}
+	return nil
+}
+
 // Tap incrementally parses SSE framing and forwards complete event/data payloads.
 //
 // It is intentionally transport-agnostic: callers may feed raw bytes via Write,
