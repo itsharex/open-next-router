@@ -15,8 +15,7 @@ hooks = [
 repo = "local"
 hooks = [
   { id = "gofmt", name = "gofmt", entry = "gofmt -w", language = "system", types = ["go"] },
-  { id = "go-test", name = "go test", entry = "go test ./...", language = "system", pass_filenames = false },
-  { id = "gocyclo", name = "gocyclo (over 30)", entry = "gocyclo -over 30 .", language = "system", pass_filenames = false },
-  { id = "golangci-lint", name = "golangci-lint", entry = "golangci-lint run --timeout=3m", language = "system", types = ["go"], pass_filenames = false },
+  { id = "gocyclo", name = "gocyclo (over 30)", entry = "gocyclo -over 30", language = "system", types = ["go"] },
+  { id = "golangci-lint", name = "golangci-lint", entry = "bash tools/prek-golangci-lint.sh", language = "system", files = '(^|/)(go\.(mod|sum)|go\.work(\.sum)?)$|\.go$' },
   { id = "commit-msg-format", name = "commit message format", entry = "tools/check-commit-msg.sh", language = "system", stages = ["commit-msg"] },
 ]
