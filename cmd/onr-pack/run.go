@@ -29,6 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.outPath, "o", "providers.conf", "output merged providers file (alias of --out)")
 	fs.BoolVar(&opts.versionOnly, "version", false, "print version and exit")
 	fs.BoolVar(&opts.checkOnly, "check-only", false, "validate provider DSL only; do not write bundled output")
+	fs.Var(&opts.checks, "check", "run extra named check after DSL validation; repeat or comma-separate values (known: required-usage, all)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -54,6 +55,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, w := range res.Warnings {
 		_, _ = fmt.Fprintln(stdout, "warn: "+w.String())
+	}
+	if err := runExtraChecks(sourcePath, opts.checks); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error: extra checks failed")
+		_, _ = fmt.Fprintln(stderr, err.Error())
+		return 1
 	}
 	if opts.checkOnly {
 		_, _ = fmt.Fprintf(stdout, "validate providers: source=%s providers=%d\n", sourcePath, len(res.LoadedProviders))
@@ -99,6 +105,7 @@ type packOptions struct {
 	outPath       string
 	checkOnly     bool
 	versionOnly   bool
+	checks        checkList
 }
 
 func detectVersion() string {

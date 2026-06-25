@@ -134,6 +134,141 @@ provider "openai" {
 	}
 }
 
+func TestRun_CheckRequiredUsageFailsForChatCompletionsWithoutUsageExtract(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "providers.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+provider "openai-compatible" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+  match api = "chat.completions" {
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile providers.conf: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"--providers", sourcePath, "--check-only", "--check", "required-usage"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("run code=%d want=1 stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "extra checks failed") {
+		t.Fatalf("stderr=%q want extra check failure", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "fix: add metrics") {
+		t.Fatalf("stderr=%q want fix hint", stderr.String())
+	}
+}
+
+func TestRun_CheckRequiredUsagePassesWithUsageExtract(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "providers.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+provider "openai-compatible" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+  match api = "chat.completions" {
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact output token path="$.usage.completion_tokens";
+    }
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile providers.conf: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"--providers", sourcePath, "--check-only", "--check", "required-usage"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "validate providers:") {
+		t.Fatalf("stdout=%q want validation summary", stdout.String())
+	}
+}
+
+func TestRun_CheckRequiredUsageIsOptIn(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "providers.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+provider "openai-compatible" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+  match api = "chat.completions" {
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile providers.conf: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"--providers", sourcePath, "--check-only"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+}
+
+func TestRun_CheckAcceptsCommaSeparatedAll(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "providers.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+provider "openai-compatible" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+  match api = "chat.completions" {
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact output token path="$.usage.completion_tokens";
+    }
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile providers.conf: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"--providers", sourcePath, "--check-only", "--check", "all,required-usage"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+}
+
 func TestRun_VersionCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

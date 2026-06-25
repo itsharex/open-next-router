@@ -199,9 +199,17 @@ go run ./cmd/onr-pack --providers ./config/onr.conf --out ./dist/providers.conf
 
 # validate only; do not write output
 go run ./cmd/onr-pack --providers ./config/onr.conf --check-only
+
+# validate with extra named checks
+go run ./cmd/onr-pack --providers ./config/onr.conf --check-only --check required-usage
 ```
 
 The command validates the provider DSL before writing. If validation fails, no output file is generated. Use `--check-only` to validate only and print the validation result without writing a bundled file.
+
+`--check` enables opt-in checks after the normal DSL validation. It may be repeated or comma-separated. Known checks:
+
+- `required-usage`: fails OpenAI-compatible `chat.completions` routes whose upstream path looks like `*/chat/completions` when no matching `metrics { usage_extract ... }` is configured.
+- `all`: runs all known extra checks.
 
 6) Setup Git hooks with prek
 
