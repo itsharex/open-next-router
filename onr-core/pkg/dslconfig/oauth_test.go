@@ -163,6 +163,26 @@ func TestOAuthGoogleServiceAccountResolve(t *testing.T) {
 	}
 }
 
+func TestProviderHeadersUsesGoogleServiceAccountOAuth(t *testing.T) {
+	t.Parallel()
+
+	headers := ProviderHeaders{
+		Defaults: PhaseHeaders{
+			OAuth: OAuthConfig{
+				Mode:      oauthModeGoogleSA,
+				ScopeExpr: `"https://www.googleapis.com/auth/cloud-platform"`,
+			},
+		},
+	}
+
+	if !headers.UsesGoogleServiceAccountOAuth(&dslmeta.Meta{API: "chat.completions"}) {
+		t.Fatalf("expected google service account oauth mode")
+	}
+	if headers.UsesOAuthMode(&dslmeta.Meta{API: "chat.completions"}, oauthModeOpenAI) {
+		t.Fatalf("should not report openai oauth mode")
+	}
+}
+
 func TestValidateProviderFile_GoogleServiceAccountRequiresScope(t *testing.T) {
 	t.Parallel()
 

@@ -154,6 +154,29 @@ provider "demo" {
 	}
 }
 
+func TestProviderModelsReferencesVariable(t *testing.T) {
+	models := ProviderModels{
+		Defaults: ModelsQueryConfig{
+			Mode: modelsModeCustom,
+			Path: `template("/v1/projects/${credential.project_id}/locations/${channel.location}/models")`,
+			Headers: []HeaderOp{
+				{Op: "header_set", NameExpr: `"x-goog-user-project"`, ValueExpr: `template("${credential.project_id}")`},
+			},
+			IDPaths: []string{"$.models[*].name"},
+		},
+	}
+
+	if !models.ReferencesVariable(nil, "channel.location") {
+		t.Fatalf("expected models query to reference channel.location")
+	}
+	if !models.ReferencesVariable(nil, "credential.project_id") {
+		t.Fatalf("expected models query to reference credential.project_id")
+	}
+	if models.ReferencesVariable(nil, "oauth.access_token") {
+		t.Fatalf("models query should not reference oauth.access_token")
+	}
+}
+
 func TestExtractModelIDs_GeminiRewriteAndAllow(t *testing.T) {
 	cfg := ModelsQueryConfig{
 		Mode:         modelsModeGemini,

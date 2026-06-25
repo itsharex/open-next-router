@@ -105,6 +105,24 @@ func (p *ProviderHeaders) Effective(meta *dslmeta.Meta) (*PhaseHeaders, bool) {
 	return &out, true
 }
 
+// UsesOAuthMode requires a non-nil meta for selecting the effective header phase.
+func (p *ProviderHeaders) UsesOAuthMode(meta *dslmeta.Meta, mode string) bool {
+	phase, ok := p.Effective(meta)
+	if !ok {
+		return false
+	}
+	resolved, ok := phase.OAuth.Resolve(meta)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(resolved.Mode), strings.TrimSpace(mode))
+}
+
+// UsesGoogleServiceAccountOAuth reports whether the selected phase uses Google service account OAuth.
+func (p *ProviderHeaders) UsesGoogleServiceAccountOAuth(meta *dslmeta.Meta) bool {
+	return p.UsesOAuthMode(meta, oauthModeGoogleSA)
+}
+
 func (p *ProviderHeaders) selectMatch(api string, stream bool) (MatchHeaders, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {

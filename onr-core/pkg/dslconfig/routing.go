@@ -96,6 +96,24 @@ func (p *ProviderRouting) HasMatch(meta *dslmeta.Meta) bool {
 	return ok
 }
 
+// ReferencesVariable reports whether routing expressions contain a DSL variable such as "channel.location".
+func (p *ProviderRouting) ReferencesVariable(variable string) bool {
+	if referencesVariable(p.BaseURLExpr, variable) {
+		return true
+	}
+	for _, match := range p.Matches {
+		if referencesVariable(match.SetPath, variable) {
+			return true
+		}
+		for _, value := range match.QueryPairs {
+			if referencesVariable(value, variable) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p *ProviderRouting) selectMatch(api string, stream bool) (RoutingMatch, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
@@ -107,6 +125,15 @@ func (p *ProviderRouting) selectMatch(api string, stream bool) (RoutingMatch, bo
 		return m, true
 	}
 	return RoutingMatch{}, false
+}
+
+func referencesVariable(expr string, variable string) bool {
+	variable = strings.TrimSpace(strings.TrimPrefix(variable, "$"))
+	if variable == "" {
+		return false
+	}
+	expr = strings.TrimSpace(expr)
+	return strings.Contains(expr, variable) || strings.Contains(expr, "$"+variable)
 }
 
 func evalStringExpr(expr string, meta *dslmeta.Meta) string {

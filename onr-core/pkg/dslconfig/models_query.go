@@ -42,6 +42,23 @@ func (p *ProviderModels) Select(_ *dslmeta.Meta) (*ModelsQueryConfig, bool) {
 	return &cfg, true
 }
 
+// ReferencesVariable reports whether the selected models query config contains a DSL variable.
+func (p *ProviderModels) ReferencesVariable(meta *dslmeta.Meta, variable string) bool {
+	cfg, ok := p.Select(meta)
+	if !ok {
+		return false
+	}
+	if referencesVariable(cfg.Path, variable) {
+		return true
+	}
+	for _, h := range cfg.Headers {
+		if referencesVariable(h.NameExpr, variable) || referencesVariable(h.ValueExpr, variable) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeModelsQueryConfig(in ModelsQueryConfig) ModelsQueryConfig {
 	out := in
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
