@@ -22,9 +22,6 @@ func NewSSEEventHandlerChain(handlers ...EventDataHandler) *SSEEventHandlerChain
 }
 
 func (h *SSEEventHandlerChain) OnSSEEventDataJSON(event string, payload []byte) error {
-	if h == nil {
-		return nil
-	}
 	for _, handler := range h.handlers {
 		if handler == nil {
 			continue
