@@ -10,8 +10,12 @@ import (
 type CheckResult struct {
 	ChunkCount int
 	Api        string
-	EventsSeen map[string]int
+	Event      *EventCheckResult
 	Payload    *PayloadCheckResult
+}
+
+type EventCheckResult struct {
+	Seen map[string]int
 }
 
 type PayloadCheckResult struct {
@@ -71,10 +75,13 @@ func (checker *StreamFormatChecker) recordEvent(event string) {
 	if event == "" {
 		event = "fallback_data"
 	}
-	if checker.res.EventsSeen == nil {
-		checker.res.EventsSeen = make(map[string]int)
+	if checker.res.Event == nil {
+		checker.res.Event = &EventCheckResult{}
 	}
-	checker.res.EventsSeen[event] += 1
+	if checker.res.Event.Seen == nil {
+		checker.res.Event.Seen = make(map[string]int)
+	}
+	checker.res.Event.Seen[event] += 1
 }
 
 func (checker *StreamFormatChecker) recordPayloadCheck(event string, issues []PayloadIssue) {

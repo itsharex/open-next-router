@@ -26,14 +26,14 @@ func TestStreamFormatCheckerCountsEventPayloads(t *testing.T) {
 	if got := res.ChunkCount; got != 3 {
 		t.Fatalf("ChunkCount=%d want 3", got)
 	}
-	if got := res.EventsSeen["response.created"]; got != 1 {
-		t.Fatalf("EventsSeen[response.created]=%d want 1", got)
+	if got := res.Event.Seen["response.created"]; got != 1 {
+		t.Fatalf("Event.Seen[response.created]=%d want 1", got)
 	}
-	if got := res.EventsSeen["response.output_text.delta"]; got != 1 {
-		t.Fatalf("EventsSeen[response.output_text.delta]=%d want 1", got)
+	if got := res.Event.Seen["response.output_text.delta"]; got != 1 {
+		t.Fatalf("Event.Seen[response.output_text.delta]=%d want 1", got)
 	}
-	if got := res.EventsSeen["response.completed"]; got != 1 {
-		t.Fatalf("EventsSeen[response.completed]=%d want 1", got)
+	if got := res.Event.Seen["response.completed"]; got != 1 {
+		t.Fatalf("Event.Seen[response.completed]=%d want 1", got)
 	}
 	if res.Payload == nil {
 		t.Fatal("Payload=nil, want payload summary")
@@ -60,11 +60,11 @@ func TestStreamFormatCheckerClassifiesDataOnlyPayloads(t *testing.T) {
 	_ = checker.OnSSEEventDataJSON("", []byte(`{"candidates":[{"finishReason":"STOP"}]}`))
 
 	res := checker.Result()
-	assertEventCount(t, res.EventsSeen, "chat.completion.chunk", 1)
-	assertEventCount(t, res.EventsSeen, "chat.completion.finish", 1)
-	assertEventCount(t, res.EventsSeen, "chat.completion.usage", 1)
-	assertEventCount(t, res.EventsSeen, "gemini.generate_content.chunk", 1)
-	assertEventCount(t, res.EventsSeen, "gemini.generate_content.finish", 1)
+	assertEventCount(t, res.Event.Seen, "chat.completion.chunk", 1)
+	assertEventCount(t, res.Event.Seen, "chat.completion.finish", 1)
+	assertEventCount(t, res.Event.Seen, "chat.completion.usage", 1)
+	assertEventCount(t, res.Event.Seen, "gemini.generate_content.chunk", 1)
+	assertEventCount(t, res.Event.Seen, "gemini.generate_content.finish", 1)
 	if got := res.Payload.CheckedCount; got != 5 {
 		t.Fatalf("Payload.CheckedCount=%d want 5", got)
 	}
@@ -86,8 +86,8 @@ func TestStreamFormatCheckerRecordsPayloadIssues(t *testing.T) {
 	_ = checker.OnSSEEventDataJSON("", []byte(`[{"type":"response.created"}]`))
 
 	res := checker.Result()
-	assertEventCount(t, res.EventsSeen, "fallback_data", 3)
-	assertEventCount(t, res.EventsSeen, "response.completed", 1)
+	assertEventCount(t, res.Event.Seen, "fallback_data", 3)
+	assertEventCount(t, res.Event.Seen, "response.completed", 1)
 	if got := res.Payload.CheckedCount; got != 4 {
 		t.Fatalf("Payload.CheckedCount=%d want 4", got)
 	}
@@ -103,7 +103,7 @@ func TestStreamFormatCheckerRecordsPayloadIssues(t *testing.T) {
 func assertEventCount(t *testing.T, events map[string]int, event string, want int) {
 	t.Helper()
 	if got := events[event]; got != want {
-		t.Fatalf("EventsSeen[%s]=%d want %d", event, got, want)
+		t.Fatalf("Event.Seen[%s]=%d want %d", event, got, want)
 	}
 }
 
