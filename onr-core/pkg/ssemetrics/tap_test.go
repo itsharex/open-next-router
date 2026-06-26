@@ -1,6 +1,7 @@
 package ssemetrics
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -106,5 +107,37 @@ func TestTap_SkipsDonePayload(t *testing.T) {
 
 	if len(handler.events) != 0 {
 		t.Fatalf("events=%v want none", handler.events)
+	}
+}
+
+type erroringHandler struct {
+	err error
+}
+
+func (h erroringHandler) OnSSEEventDataJSON(string, []byte) error {
+	return h.err
+}
+
+func TestSSEEventHandlerChain_ForwardsToAllHandlers(t *testing.T) {
+	t.Parallel()
+
+	first := &recordingHandler{}
+	second := &recordingHandler{}
+	chain := NewSSEEventHandlerChain(nil, first, erroringHandler{err: errors.New("ignored")}, second)
+
+	if err := chain.OnSSEEventDataJSON("response.completed", []byte(`{"ok":true}`)); err != nil {
+		t.Fatalf("OnSSEEventDataJSON err=%v, want nil", err)
+	}
+
+	for name, handler := range map[string]*recordingHandler{
+		"first":  first,
+		"second": second,
+	} {
+		if len(handler.events) != 1 || handler.events[0] != "response.completed" {
+			t.Fatalf("%s events=%v want [response.completed]", name, handler.events)
+		}
+		if len(handler.payloads) != 1 || handler.payloads[0] != `{"ok":true}` {
+			t.Fatalf("%s payloads=%v want payload", name, handler.payloads)
+		}
 	}
 }
