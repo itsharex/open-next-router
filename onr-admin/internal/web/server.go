@@ -21,6 +21,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/providersource"
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/store"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dsllang"
 	cfgpkg "github.com/r9s-ai/open-next-router/pkg/config"
 )
 
@@ -90,6 +91,39 @@ type dumpByRequestIDResponse struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type editorRequest struct {
+	Provider string `json:"provider"`
+	Content  string `json:"content"`
+}
+
+type editorDiagnosticsResponse struct {
+	OK          bool                 `json:"ok"`
+	Provider    string               `json:"provider,omitempty"`
+	TargetFile  string               `json:"target_file,omitempty"`
+	URI         string               `json:"uri,omitempty"`
+	Diagnostics []dsllang.Diagnostic `json:"diagnostics,omitempty"`
+	Error       string               `json:"error,omitempty"`
+}
+
+type editorSemanticTokensResponse struct {
+	OK         bool                        `json:"ok"`
+	Provider   string                      `json:"provider,omitempty"`
+	TargetFile string                      `json:"target_file,omitempty"`
+	URI        string                      `json:"uri,omitempty"`
+	Legend     dsllang.SemanticTokenLegend `json:"legend,omitempty"`
+	Tokens     dsllang.SemanticTokens      `json:"tokens,omitempty"`
+	Error      string                      `json:"error,omitempty"`
+}
+
+type editorFormatResponse struct {
+	OK         bool   `json:"ok"`
+	Provider   string `json:"provider,omitempty"`
+	TargetFile string `json:"target_file,omitempty"`
+	URI        string `json:"uri,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 func Run(opts Options) error {
 	providersPath := resolveProviderSourcePath(opts.ConfigPath, opts.ProvidersDir)
 	dumpsDir := resolveDumpsDir(opts.ConfigPath)
@@ -137,10 +171,15 @@ func newServer(providersDir string, dumpsDir string, defaultBaseURL string) (*Se
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/app.css", s.handleAppCSS)
+	mux.HandleFunc("/app.js", s.handleAppJS)
 	mux.HandleFunc("/api/providers", s.handleProviders)
 	mux.HandleFunc("/api/provider", s.handleProvider)
 	mux.HandleFunc("/api/providers/validate", s.handleValidate)
 	mux.HandleFunc("/api/providers/save", s.handleSave)
+	mux.HandleFunc("/api/editor/diagnostics", s.handleEditorDiagnostics)
+	mux.HandleFunc("/api/editor/semantic-tokens", s.handleEditorSemanticTokens)
+	mux.HandleFunc("/api/editor/format", s.handleEditorFormat)
 	mux.HandleFunc("/api/test/request", s.handleTestRequest)
 	mux.HandleFunc("/api/dumps/by-request-id", s.handleDumpByRequestID)
 	return mux
@@ -157,6 +196,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = io.WriteString(w, s.indexHTML)
+}
+
+func (s *Server) handleAppCSS(w http.ResponseWriter, r *http.Request) {
+	writeTextAsset(w, r, "text/css; charset=utf-8", appCSS)
+}
+
+func (s *Server) handleAppJS(w http.ResponseWriter, r *http.Request) {
+	writeTextAsset(w, r, "application/javascript; charset=utf-8", appJS)
 }
 
 func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +301,80 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		TargetFile:      target,
 		LoadedProviders: res.LoadedProviders,
 		Warnings:        formatWarnings(res.Warnings),
+	})
+}
+
+func (s *Server) handleEditorDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	in, err := decodeEditorRequest(r)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorDiagnosticsResponse{OK: false, Error: err.Error()})
+		return
+	}
+	uri, target, err := s.editorDocumentURI(in.Provider)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorDiagnosticsResponse{OK: false, Error: err.Error()})
+		return
+	}
+	diagnostics := dsllang.CollectDiagnostics(uri, in.Content)
+	writeJSONAny(w, http.StatusOK, editorDiagnosticsResponse{
+		OK:          true,
+		Provider:    in.Provider,
+		TargetFile:  target,
+		URI:         uri,
+		Diagnostics: diagnostics,
+	})
+}
+
+func (s *Server) handleEditorSemanticTokens(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	in, err := decodeEditorRequest(r)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorSemanticTokensResponse{OK: false, Error: err.Error()})
+		return
+	}
+	uri, target, err := s.editorDocumentURI(in.Provider)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorSemanticTokensResponse{OK: false, Error: err.Error()})
+		return
+	}
+	writeJSONAny(w, http.StatusOK, editorSemanticTokensResponse{
+		OK:         true,
+		Provider:   in.Provider,
+		TargetFile: target,
+		URI:        uri,
+		Legend:     dsllang.CollectSemanticTokenLegend(),
+		Tokens:     dsllang.CollectSemanticTokens(in.Content),
+	})
+}
+
+func (s *Server) handleEditorFormat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	in, err := decodeEditorRequest(r)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorFormatResponse{OK: false, Error: err.Error()})
+		return
+	}
+	uri, target, err := s.editorDocumentURI(in.Provider)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorFormatResponse{OK: false, Error: err.Error()})
+		return
+	}
+	writeJSONAny(w, http.StatusOK, editorFormatResponse{
+		OK:         true,
+		Provider:   in.Provider,
+		TargetFile: target,
+		URI:        uri,
+		Content:    dsllang.FormatText(in.Content, dsllang.FormatOptions{TabSize: 2, InsertSpaces: true}),
 	})
 }
 
@@ -485,6 +606,49 @@ func decodeProviderRequest(r *http.Request) (providerRequest, error) {
 	return in, nil
 }
 
+// decodeEditorRequest accepts empty content so live editing can report a clean
+// state before the user has typed a full provider block.
+func decodeEditorRequest(r *http.Request) (editorRequest, error) {
+	defer func() { _ = r.Body.Close() }()
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var in editorRequest
+	if err := dec.Decode(&in); err != nil {
+		return editorRequest{}, err
+	}
+	name, err := normalizeProviderName(in.Provider)
+	if err != nil {
+		return editorRequest{}, err
+	}
+	in.Provider = name
+	return in, nil
+}
+
+func (s *Server) editorDocumentURI(provider string) (string, string, error) {
+	name, err := normalizeProviderName(provider)
+	if err != nil {
+		return "", "", err
+	}
+	target, err := providersource.ResolveProviderTarget(s.providerSource, name)
+	if err != nil {
+		return "", "", err
+	}
+	path := target.Path
+	if s.providerSource.SourceIsFile && target.Path == s.providerSource.SourcePath {
+		path = filepath.Join(filepath.Dir(s.providerSource.SourcePath), "providers", name+".conf")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", "", err
+	}
+	return fileURI(abs), target.Path, nil
+}
+
+func fileURI(path string) string {
+	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+}
+
 func formatWarnings(warnings []dslconfig.ValidationWarning) []string {
 	if len(warnings) == 0 {
 		return nil
@@ -559,6 +723,15 @@ func writeMethodNotAllowed(w http.ResponseWriter, allowed string) {
 		w.Header().Set("Allow", allowed)
 	}
 	writeJSON(w, http.StatusMethodNotAllowed, providerResponse{OK: false, Error: "method not allowed"})
+}
+
+func writeTextAsset(w http.ResponseWriter, r *http.Request, contentType string, body string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	_, _ = io.WriteString(w, body)
 }
 
 func resolveProviderSourcePath(cfgPath, override string) string {

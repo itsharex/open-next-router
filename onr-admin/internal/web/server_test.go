@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -179,6 +180,59 @@ func TestProviderEndpoints(t *testing.T) {
 	}
 	if len(body.Warnings) != 0 {
 		t.Fatalf("expected no warnings in validate response, got=%v", body.Warnings)
+	}
+}
+
+func TestEditorLanguageEndpoints(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openai.conf"), []byte(validOpenAIConf), 0o600); err != nil {
+		t.Fatalf("write provider conf: %v", err)
+	}
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	invalid := strings.Replace(validOpenAIConf, "provider", "provider_bad", 1)
+	status, diagBody := postEditorDiagnosticsJSON(t, httpSrv.URL+"/api/editor/diagnostics", editorRequest{
+		Provider: "openai",
+		Content:  invalid,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("diagnostics status=%d body=%+v", status, diagBody)
+	}
+	if !diagBody.OK || diagBody.Provider != "openai" || diagBody.TargetFile == "" || diagBody.URI == "" {
+		t.Fatalf("unexpected diagnostics body: %+v", diagBody)
+	}
+	if len(diagBody.Diagnostics) == 0 {
+		t.Fatalf("expected diagnostics for invalid content")
+	}
+
+	status, tokenBody := postEditorSemanticTokensJSON(t, httpSrv.URL+"/api/editor/semantic-tokens", editorRequest{
+		Provider: "openai",
+		Content:  validOpenAIConf,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("semantic tokens status=%d body=%+v", status, tokenBody)
+	}
+	if !tokenBody.OK || len(tokenBody.Legend.TokenTypes) == 0 || len(tokenBody.Tokens.Data) == 0 {
+		t.Fatalf("unexpected semantic tokens body: %+v", tokenBody)
+	}
+
+	status, formatBody := postEditorFormatJSON(t, httpSrv.URL+"/api/editor/format", editorRequest{
+		Provider: "openai",
+		Content:  `provider "openai" { defaults { auth { auth_bearer; } } }`,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("format status=%d body=%+v", status, formatBody)
+	}
+	if !formatBody.OK || !strings.Contains(formatBody.Content, "\n  defaults {") {
+		t.Fatalf("unexpected format body: %+v", formatBody)
 	}
 }
 
@@ -548,8 +602,54 @@ func TestRenderIndexHTML_ReplacesDefaultAPIBaseURL(t *testing.T) {
 	if !strings.Contains(out, `value="https://onr.local:3300"`) {
 		t.Fatalf("unexpected rendered html")
 	}
+	if !strings.Contains(out, `href="/app.css"`) || !strings.Contains(out, `src="/app.js"`) {
+		t.Fatalf("missing split web assets")
+	}
+	if !strings.Contains(out, `codemirror@`) {
+		t.Fatalf("missing CodeMirror editor assets")
+	}
 	if !strings.Contains(out, `id="requestIdInput"`) || !strings.Contains(out, `id="loadDumpBtn"`) || !strings.Contains(out, `id="dumpOutput"`) {
 		t.Fatalf("missing dump request_id ui elements")
+	}
+}
+
+func TestStaticAssetEndpoints(t *testing.T) {
+	srv, err := NewServer(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	cases := []struct {
+		path        string
+		contentType string
+		contains    string
+	}{
+		{path: "/app.css", contentType: "text/css", contains: ".editor-shell"},
+		{path: "/app.js", contentType: "application/javascript", contains: "CodeMirror.fromTextArea"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.path, func(t *testing.T) {
+			resp, err := http.Get(httpSrv.URL + tt.path)
+			if err != nil {
+				t.Fatalf("get asset: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status=%d", resp.StatusCode)
+			}
+			if got := resp.Header.Get("Content-Type"); !strings.Contains(got, tt.contentType) {
+				t.Fatalf("content-type=%q want %q", got, tt.contentType)
+			}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if !strings.Contains(string(body), tt.contains) {
+				t.Fatalf("asset body missing %q", tt.contains)
+			}
+		})
 	}
 }
 
@@ -752,6 +852,60 @@ func postTestJSON(t *testing.T, url string, body any) (int, testResponse) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out testResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return resp.StatusCode, out
+}
+
+func postEditorDiagnosticsJSON(t *testing.T, url string, body any) (int, editorDiagnosticsResponse) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	resp, err := http.Post(url, "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("post %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out editorDiagnosticsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return resp.StatusCode, out
+}
+
+func postEditorSemanticTokensJSON(t *testing.T, url string, body any) (int, editorSemanticTokensResponse) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	resp, err := http.Post(url, "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("post %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out editorSemanticTokensResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return resp.StatusCode, out
+}
+
+func postEditorFormatJSON(t *testing.T, url string, body any) (int, editorFormatResponse) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	resp, err := http.Post(url, "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("post %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out editorFormatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
