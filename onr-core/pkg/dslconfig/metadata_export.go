@@ -115,17 +115,18 @@ func exportJSONOps(in []JSONOp) []dslmetadata.JSONOp {
 	out := make([]dslmetadata.JSONOp, 0, len(in))
 	for _, op := range in {
 		out = append(out, dslmetadata.JSONOp{
-			Op:         strings.TrimSpace(op.Op),
-			Path:       strings.TrimSpace(op.Path),
-			FromPath:   strings.TrimSpace(op.FromPath),
-			ToPath:     strings.TrimSpace(op.ToPath),
-			ValueExpr:  strings.TrimSpace(op.ValueExpr),
-			HeaderName: strings.TrimSpace(op.HeaderName),
-			FieldName:  strings.TrimSpace(op.FieldName),
-			Patterns:   trimStringSliceForMetadata(op.Patterns),
-			Separator:  strings.TrimSpace(op.Separator),
-			Event:      strings.TrimSpace(op.Event),
-			MaxCount:   op.MaxCount,
+			Op:            strings.TrimSpace(op.Op),
+			Path:          strings.TrimSpace(op.Path),
+			FromPath:      strings.TrimSpace(op.FromPath),
+			ToPath:        strings.TrimSpace(op.ToPath),
+			ValueExpr:     strings.TrimSpace(op.ValueExpr),
+			HeaderName:    strings.TrimSpace(op.HeaderName),
+			FieldName:     strings.TrimSpace(op.FieldName),
+			Patterns:      trimStringSliceForMetadata(op.Patterns),
+			Separator:     strings.TrimSpace(op.Separator),
+			Event:         strings.TrimSpace(op.Event),
+			EventOptional: op.EventOptional,
+			MaxCount:      op.MaxCount,
 		})
 	}
 	return out
