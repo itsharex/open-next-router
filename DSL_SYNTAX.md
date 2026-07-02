@@ -140,6 +140,8 @@ Currently supported `api` values (aligned with OpenAI-style endpoints):
 - `audio.translations`
 - `gemini.generateContent` (Gemini native: `POST /v1beta/models/{model}:generateContent`)
 - `gemini.streamGenerateContent` (Gemini native: `POST /v1beta/models/{model}:streamGenerateContent?alt=sse`)
+- `gemini.predictLongRunning` (Gemini native: `POST /v1beta/models/{model}:predictLongRunning`)
+- `gemini.getOperation` (Gemini native long-running operation query: `GET /v1beta/{operation_name}`)
 
 ## 5. Phases / blocks (can appear in defaults and match)
 
@@ -2282,7 +2284,14 @@ Model name from the client request.
 
 Mapped model name. Defaults to `$request.model`; can be modified by `model_map` and `model_map_default`.
 
-### 8.4 Examples
+### 8.4 `$task.*`
+
+`$task.upstream_id`
+
+Upstream task/operation id for long-running operation routes. For Gemini Veo this is the operation
+name returned by `predictLongRunning`, for example `models/veo-3.1-generate-preview/operations/abc`.
+
+### 8.5 Examples
 
 ```conf
 request {
@@ -2303,5 +2312,8 @@ upstream {
 
   # Example: Vertex AI path with credential and location metadata
   set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+
+  # Example: Gemini long-running operation query path
+  set_path concat("/v1beta/", $task.upstream_id);
 }
 ```
