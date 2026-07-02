@@ -136,6 +136,8 @@ match api = "<api-name>" { ... }
 - `embeddings`
 - `gemini.generateContent`（Gemini 原生：`POST /v1beta/models/{model}:generateContent`）
 - `gemini.streamGenerateContent`（Gemini 原生：`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`）
+- `gemini.predictLongRunning`（Gemini 原生：`POST /v1beta/models/{model}:predictLongRunning`）
+- `gemini.getOperation`（Gemini 原生长任务查询：`GET /v1beta/{operation_name}`）
 - `images.generations`
 - `images.edits`
 - `audio.speech`
@@ -2278,7 +2280,14 @@ Provider location。对 Vertex AI 通常是 `global` 或 `us-central1` 这类区
 
 映射后的模型名。默认等于 `$request.model`；可通过 `model_map` 与 `model_map_default` 修改。
 
-### 8.4 使用示例
+### 8.4 `$task.*`
+
+`$task.upstream_id`
+
+长任务查询路由中的上游任务/operation id。对 Gemini Veo 来说，它是 `predictLongRunning`
+返回的 operation name，例如 `models/veo-3.1-generate-preview/operations/abc`。
+
+### 8.5 使用示例
 
 ```conf
 request {
@@ -2299,5 +2308,8 @@ upstream {
 
   # 示例：使用 credential 与 location 元数据拼接 Vertex AI path
   set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+
+  # 示例：Gemini 长任务 operation 查询路径
+  set_path concat("/v1beta/", $task.upstream_id);
 }
 ```
