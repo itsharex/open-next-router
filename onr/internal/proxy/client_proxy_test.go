@@ -114,3 +114,31 @@ func TestHTTPClientForProvider_SOCKS5(t *testing.T) {
 		t.Fatalf("expected Proxy func to be nil for socks5 (use dialer instead)")
 	}
 }
+
+func TestBedrockHTTPClientForProvider_UsesProviderProxy(t *testing.T) {
+	c := &Client{
+		HTTP: &http.Client{Timeout: 3 * time.Second},
+		ProxyByProvider: map[string]string{
+			"aws-bedrock": "http://127.0.0.1:1083",
+		},
+	}
+
+	hc, err := c.httpClientForProvider("aws-bedrock")
+	if err != nil {
+		t.Fatalf("httpClientForProvider: %v", err)
+	}
+	tr, ok := hc.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", hc.Transport)
+	}
+	if tr.Proxy == nil {
+		t.Fatalf("expected proxy function to be set")
+	}
+	pu, err := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "https", Host: "bedrock-runtime.us-east-1.amazonaws.com"}})
+	if err != nil {
+		t.Fatalf("unexpected proxy error: %v", err)
+	}
+	if pu == nil || pu.Scheme != "http" || pu.Host != "127.0.0.1:1083" {
+		t.Fatalf("unexpected proxy url: %#v", pu)
+	}
+}

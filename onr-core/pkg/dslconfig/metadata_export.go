@@ -13,6 +13,7 @@ func ExportProviderMetadata(p ProviderFile) dslmetadata.ProviderConfig {
 	cfg := dslmetadata.ProviderConfig{
 		Metadata: exportProviderMetadata(p.Metadata),
 		Routes:   exportProviderRoutes(p.Routing),
+		Upstream: exportProviderUpstream(p.Routing),
 		Request:  exportProviderRequest(p.Request),
 		Auth:     exportProviderAuth(p.Headers),
 		Balance:  exportProviderBalance(p.Balance),
@@ -22,6 +23,16 @@ func ExportProviderMetadata(p ProviderFile) dslmetadata.ProviderConfig {
 		cfg.UsageFacts = usageFacts
 	}
 	return dslmetadata.NormalizeProviderConfig(cfg)
+}
+
+func exportProviderUpstream(routing ProviderRouting) *dslmetadata.ProviderUpstream {
+	transport := strings.ToLower(strings.TrimSpace(routing.Transport))
+	if transport == "" {
+		return nil
+	}
+	return &dslmetadata.ProviderUpstream{
+		Transport: transport,
+	}
 }
 
 func exportProviderMetadata(metadata ProviderMetadata) *dslmetadata.ProviderMetadata {
@@ -104,17 +115,18 @@ func exportJSONOps(in []JSONOp) []dslmetadata.JSONOp {
 	out := make([]dslmetadata.JSONOp, 0, len(in))
 	for _, op := range in {
 		out = append(out, dslmetadata.JSONOp{
-			Op:         strings.TrimSpace(op.Op),
-			Path:       strings.TrimSpace(op.Path),
-			FromPath:   strings.TrimSpace(op.FromPath),
-			ToPath:     strings.TrimSpace(op.ToPath),
-			ValueExpr:  strings.TrimSpace(op.ValueExpr),
-			HeaderName: strings.TrimSpace(op.HeaderName),
-			FieldName:  strings.TrimSpace(op.FieldName),
-			Patterns:   trimStringSliceForMetadata(op.Patterns),
-			Separator:  strings.TrimSpace(op.Separator),
-			Event:      strings.TrimSpace(op.Event),
-			MaxCount:   op.MaxCount,
+			Op:            strings.TrimSpace(op.Op),
+			Path:          strings.TrimSpace(op.Path),
+			FromPath:      strings.TrimSpace(op.FromPath),
+			ToPath:        strings.TrimSpace(op.ToPath),
+			ValueExpr:     strings.TrimSpace(op.ValueExpr),
+			HeaderName:    strings.TrimSpace(op.HeaderName),
+			FieldName:     strings.TrimSpace(op.FieldName),
+			Patterns:      trimStringSliceForMetadata(op.Patterns),
+			Separator:     strings.TrimSpace(op.Separator),
+			Event:         strings.TrimSpace(op.Event),
+			EventOptional: op.EventOptional,
+			MaxCount:      op.MaxCount,
 		})
 	}
 	return out
@@ -223,6 +235,14 @@ func exportProviderAuth(headers ProviderHeaders) *dslmetadata.ProviderAuth {
 }
 
 func exportAuthFromPhase(phase PhaseHeaders) *dslmetadata.ProviderAuth {
+	if phase.AWSSigV4 {
+		return &dslmetadata.ProviderAuth{
+			Type:           "aws_sigv4",
+			Service:        "bedrock",
+			Credentials:    "static_ak_sk",
+			RequiresRegion: true,
+		}
+	}
 	for _, op := range phase.Auth {
 		if strings.TrimSpace(op.Op) != "header_set" {
 			continue

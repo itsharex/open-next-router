@@ -179,12 +179,13 @@ Phase boundary rule (important):
 ```conf
 upstream_config {
   base_url = "https://api.example.com";
+  transport http;
 }
 ```
 
-- `base_url` is **required** and must be a **string literal** (a fixed URL).
-- `base_url` is also a default value: if the channel/provider key defines a `base_url` override at runtime, it should
-  override this default; otherwise this default is used.
+- `transport` selects the upstream transport. The default is `http`.
+- `transport http` uses a normal HTTP upstream. `base_url` is required and must be non-empty; if the runtime channel/provider key defines a `base_url` override, it takes priority.
+- `transport aws_sdk` uses the AWS SDK Bedrock Runtime upstream. `base_url` is optional; when configured, it is used as the SDK endpoint override. When omitted, the SDK derives the endpoint from the AWS region.
 
 ### 5.2 auth
 
@@ -243,6 +244,19 @@ auth {
   - `oauth_timeout_ms <int>;` (default: `5000`)
   - `oauth_refresh_skew_sec <int>;` (default: `300`)
   - `oauth_fallback_ttl_sec <int>;` (default: `1800`)
+
+#### auth_sigv4_bedrock
+
+```conf
+auth { auth_sigv4_bedrock; }
+```
+
+Declares AWS Bedrock SigV4 auth for AWS SDK transport. It does not inject a normal HTTP token header.
+
+- ONR file mode reads `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, and `aws_region` from the selected key config.
+- Embedding runtimes should pass equivalent AWS credentials and region through runtime metadata.
+- `aws_region` is runtime metadata, not a DSL `<expr>` variable.
+- Cannot be combined with `auth_bearer`, `auth_header_key`, `auth_oauth_bearer`, or OAuth token exchange directives.
 
 ### 5.3 request
 
@@ -451,6 +465,31 @@ upstream {
 - Multiple directives are allowed.
 - Execution order: all `del_query` first, then all `set_query`.
 
+#### set_path under AWS SDK transport
+
+`transport aws_sdk` still uses `set_path` to describe the Bedrock Runtime target resource:
+
+```conf
+upstream {
+  set_path template("/model/${request.model_mapped}/invoke");
+}
+```
+
+Streaming Bedrock Runtime route:
+
+```conf
+upstream {
+  set_path template("/model/${request.model_mapped}/invoke-with-response-stream");
+}
+```
+
+Notes:
+
+- `/model/{modelId}/invoke` maps to Bedrock Runtime `InvokeModel`.
+- `/model/{modelId}/invoke-with-response-stream` maps to Bedrock Runtime `InvokeModelWithResponseStream`.
+- `modelId` normally comes from `$request.model_mapped`, and may be a base model ID, inference profile ID, or ARN.
+- `upstream` is applied after request model mapping, so path templates can use the `model_map` result.
+
 ### 5.5 response
 
 This phase selects a response strategy. For `resp_passthrough` / `resp_map` / `sse_parse`, if multiple strategy directives are present, **the last one wins**. `sse_collect` is a separate pre-mapping collection step for non-stream routes and may be followed by `resp_map`.
@@ -512,6 +551,40 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks` (`sse_parse`): OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
+AWS Bedrock example:
+
+```conf
+provider "aws-bedrock" {
+  defaults {
+    upstream_config {
+      transport aws_sdk;
+      # base_url = "https://bedrock-runtime.us-east-1.amazonaws.com";
+    }
+    auth {
+      auth_sigv4_bedrock;
+    }
+    request {
+      after_req_map {
+        json_set "$.anthropic_version" "bedrock-2023-05-31";
+      }
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    request {
+      model_map "claude-3-5-sonnet-20241022" "anthropic.claude-3-5-sonnet-20241022-v2:0";
+      req_map openai_chat_to_anthropic_messages;
+    }
+    upstream {
+      set_path template("/model/${request.model_mapped}/invoke");
+    }
+    response {
+      resp_map anthropic_to_openai_chat;
+    }
+  }
+}
+```
+
 #### json_del / json_set / json_replace / json_set_if_absent / json_rename (response JSON ops)
 
 These directives apply **best-effort** JSON mutations to the downstream response body.
@@ -535,19 +608,21 @@ Semantics:
 - `json_set` creates missing paths; `json_replace` only replaces existing paths, which is useful for replacing upstream `model` fields without polluting unrelated events.
 - `json_set`, `json_replace`, and `json_set_if_absent` value expressions support `template(...)`.
 - In streaming SSE, `json_set`, `json_replace`, `json_set_if_absent`, `json_del`, and `json_rename` may add `event="<name|name2>"` to run only for matching SSE `event:` names.
+- Response JSON ops may also add `event_optional=true` together with `event="..."`; they still require matching event names when an event is present, but remain eligible when no event context is available.
 - Response JSON ops may add `max_count=<n>` to limit how many times one directive can take effect during one response handling cycle. The default `max_count=0` means unlimited.
 
 ```conf
 response {
   resp_passthrough;
-  json_replace "$.message.model" $request.model event="message_start" max_count=1;
-  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+  json_set "$.response.metadata.gateway" "onr" event="response.completed" event_optional=true;
+  json_replace "$.message.model" $request.model event="message_start" event_optional=true max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete" event_optional=true;
 }
 ```
 
-- `event="..."` only affects SSE JSON events. Non-streaming JSON responses have no event context, so response JSON ops with `event` are skipped.
+- `event="..."` only affects SSE JSON events. Non-streaming JSON responses have no event context, so response JSON ops with `event` are skipped unless the directive supports and enables `event_optional=true`.
+- `event_optional=true` requires `event`; when the runtime has no event context, the directive falls back to normal JSON matching.
 - `max_count` is tracked per directive. Non-streaming JSON has at most one object to process; SSE counts across the whole stream. Only actual changes are counted, so a `json_replace` with a missing path does not increment the count.
-- Response JSON ops do not support `event_optional=true`. To support upstreams that omit `event:` framing, use an unscoped directive or add event names during upstream mapping.
 
 Limitations (v0.1):
 
@@ -626,7 +701,6 @@ models_mode "openai" {
 - Inside the block, you can use the same directives supported by `models`: `models_mode`, `method`, `path`, `id_path`, `id_regex`, `id_allow_regex`, `set_header`, and `del_header`.
 - Another `models_mode` may be referenced from inside the block via `models_mode <other_mode>;`. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `models_mode` names are validation errors.
-- This repository's default `config/modes/models_modes.conf` defines `openai`, `gemini`, and `vertex` as global `models_mode` presets. Defining the same name in DSL overrides that preset.
 
 #### balance_mode (global reusable balance preset)
 
@@ -1108,6 +1182,10 @@ Semantics:
   - `path /v1beta1/publishers/google/models`
   - `id_path $.publisherModels[*].name`
   - `id_regex ^publishers/google/models/(.+)$`
+- The default `bedrock` preset lists AWS Bedrock foundation models:
+  - `path /foundation-models`
+  - `id_path $.modelSummaries[*].modelId`
+  - with `transport aws_sdk`, ONR queries the Bedrock control-plane endpoint `https://bedrock.<region>.amazonaws.com` and signs the request with SigV4 service `bedrock`
 - `models_mode custom` requires explicit `path` and at least one `id_path`.
 - `id_path` is repeatable; extracted IDs are unioned and deduplicated.
 - `id_regex` rewrites each extracted value:
@@ -1271,8 +1349,22 @@ Context: defaults
 Multiple: no
 ```
 
-- `base_url` is required and must be a string literal.
+- With `transport http`, `base_url` is required and must be a non-empty string literal.
+- With `transport aws_sdk`, `base_url` is optional; when non-empty, it is used as the SDK endpoint override. When omitted, the SDK derives the endpoint from region.
 - Runtime channel/key `base_url` can override this default; otherwise this default is used.
+
+#### transport
+
+```text
+Syntax:  transport http|aws_sdk;
+Default: http
+Context: upstream_config
+Multiple: yes (last wins)
+```
+
+- Selects the upstream transport.
+- `http` uses normal HTTP `base_url + path/query` routing.
+- `aws_sdk` uses AWS SDK Bedrock Runtime transport.
 
 ### 7.4 auth
 
@@ -1326,6 +1418,19 @@ Multiple: yes
 ```
 
 - Sets `Authorization: Bearer <oauth.access_token>`.
+
+#### auth_sigv4_bedrock
+
+```text
+Syntax:  auth_sigv4_bedrock;
+Default: —
+Context: auth
+Multiple: yes
+```
+
+- Declares AWS Bedrock SigV4 auth for AWS SDK transport.
+- Does not inject `$channel.key` as a normal HTTP header.
+- Cannot be combined with `auth_bearer`, `auth_header_key`, `auth_oauth_bearer`, or OAuth token exchange directives.
 
 #### OAuth auth directives
 
@@ -1435,7 +1540,7 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set <jsonpath> <value-expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1445,12 +1550,13 @@ Multiple: yes
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `<value-expr>` supports `true/false/null`, integer, string literal, variable, `concat(...)`, and `template(...)`.
 - `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `event_optional=true` only applies in `response`, requires `event`, and keeps the directive eligible when no event context is available.
 - `max_count=<n>` only applies in `response`; `0` means unlimited, `n > 0` means this directive can make at most `n` actual changes during one response handling cycle.
 
 #### json_replace
 
 ```text
-Syntax:  json_replace <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_replace <jsonpath> <value-expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1461,12 +1567,13 @@ Multiple: yes
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `<value-expr>` supports the same expression forms as `json_set`.
 - `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set_if_absent <jsonpath> <value-expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1475,12 +1582,13 @@ Multiple: yes
 - Sets a JSON value only when the path does not exist.
 - If the path already exists (including `null`), the original value is kept.
 - `event="..."` only applies to response SSE JSON ops.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1489,12 +1597,13 @@ Multiple: yes
 - Deletes a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `event="..."` only applies to response SSE JSON ops.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1503,6 +1612,7 @@ Multiple: yes
 - Renames a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `event="..."` only applies to response SSE JSON ops.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_wrap_input_text
@@ -2090,6 +2200,7 @@ Multiple: yes
 
 - `models_mode openai`: default `/v1/models`
 - `models_mode gemini`: default `/v1beta/models`
+- `models_mode bedrock`: default `/foundation-models` from `config/modes/models_modes.conf`
 - `models_mode custom`: required
 - `path` may use `template("...")` when the literal template starts with `/`, `http://`, or `https://`.
 - If `models_mode` is omitted but custom query fields such as `path`, `id_path`, `id_regex`, or `id_allow_regex` are present, ONR treats the block as `models_mode custom;`.
@@ -2105,6 +2216,7 @@ Multiple: yes
 
 - `models_mode openai`: default `$.data[*].id`
 - `models_mode gemini`: default `$.models[*].name`
+- `models_mode bedrock`: default `$.modelSummaries[*].modelId` from `config/modes/models_modes.conf`
 - `models_mode custom`: at least one `id_path` is required
 
 #### id_regex / id_allow_regex

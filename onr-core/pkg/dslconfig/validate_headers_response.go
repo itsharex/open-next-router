@@ -55,6 +55,22 @@ func validatePhaseHeaders(path, providerName, scope string, phase PhaseHeaders) 
 	if err := validateHeaderOps(path, providerName, scope+".headers", append(append([]HeaderOp(nil), phase.Auth...), phase.Request...)); err != nil {
 		return err
 	}
+	if phase.AWSSigV4 {
+		if len(phase.Auth) > 0 {
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s auth_sigv4_bedrock cannot be combined with header auth directives", providerName, path, scope),
+				scope,
+				"auth_sigv4_bedrock",
+			)
+		}
+		if !phase.OAuth.IsEmpty() {
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s auth_sigv4_bedrock cannot be combined with oauth directives", providerName, path, scope),
+				scope,
+				"auth_sigv4_bedrock",
+			)
+		}
+	}
 	return validateOAuthConfig(path, providerName, scope+".oauth", phase.OAuth)
 }
 
@@ -249,6 +265,11 @@ func validateResponseDirective(path, providerName, scope string, d ResponseDirec
 		}
 		if op.MaxCount < 0 {
 			return fmt.Errorf("provider %q in %q: %s max_count must be non-negative", providerName, path, opScope)
+		}
+		if op.EventOptional {
+			if strings.TrimSpace(op.Event) == "" {
+				return fmt.Errorf("provider %q in %q: %s event_optional requires event", providerName, path, opScope)
+			}
 		}
 	}
 	return nil

@@ -133,6 +133,38 @@ func TestAnalyzeSemantic_UsesSiblingOnrConfigForProviderModes(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSemantic_AcceptsBedrockHTTPPassthroughPaths(t *testing.T) {
+	text := `syntax "next-router/0.1";
+
+provider "aws-bedrock-mantle" {
+  defaults {
+    upstream_config {
+      transport aws_sdk;
+    }
+    auth {
+      auth_sigv4_bedrock;
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+
+  match api = "claude.messages" stream = false {
+    upstream {
+      set_path "/anthropic/v1/messages";
+    }
+  }
+}
+`
+	diags := dsllang.AnalyzeSemantic("file:///tmp/providers/aws-bedrock-mantle.conf", text)
+	if len(diags) != 0 {
+		t.Fatalf("expected no diagnostics for bedrock http passthrough paths, got: %+v", diags)
+	}
+}
+
 func TestAnalyzeSemanticModes_IgnoreNonStatementStartAndMissingMode(t *testing.T) {
 	text := "provider \"x\" {\n  defaults {\n    request {\n      # req_map here in comment should be ignored\n      req_map ;\n      json_set \"$.x\" \"y\"; req_map openai_chat_to_openai_responses;\n    }\n  }\n}\n"
 	diags := dsllang.AnalyzeSemanticModes(text)

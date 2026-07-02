@@ -180,13 +180,15 @@ phase 边界规则（非常重要）：
 ```conf
 upstream_config {
   base_url = "https://api.example.com";
+  transport http;
 }
 ```
 
 说明：
 
-- `base_url` 是**必填**，同时也是**默认值**
-- 若渠道（DB）配置了 `base_url`，则优先使用渠道配置；只有当渠道 `base_url` 为空时，才使用这里的默认值
+- `transport` 声明上游传输方式。默认是 `http`。
+- `transport http` 使用普通 HTTP 上游，`base_url` 必填且必须非空；若渠道（DB）配置了 `base_url`，则优先使用渠道配置。
+- `transport aws_sdk` 使用 AWS SDK Bedrock Runtime 上游；`base_url` 可选，配置时作为 SDK endpoint override，不配置时由 SDK 按 AWS region 派生 endpoint。
 
 ### 5.2 auth（鉴权）
 
@@ -244,6 +246,19 @@ auth {
   - `oauth_timeout_ms <int>;`（默认 `5000`）
   - `oauth_refresh_skew_sec <int>;`（默认 `300`）
   - `oauth_fallback_ttl_sec <int>;`（默认 `1800`）
+
+#### auth_sigv4_bedrock
+
+```conf
+auth { auth_sigv4_bedrock; }
+```
+
+用途：声明当前 provider 使用 AWS Bedrock SigV4 鉴权与 AWS SDK transport，不向 HTTP header 注入普通 token。
+
+- ONR 文件模式从 key 配置读取 `aws_access_key_id`、`aws_secret_access_key`、`aws_session_token`、`aws_region`。
+- 嵌入式运行时应从 channel/provider 元数据传入等价的 AWS credential 与 region。
+- `aws_region` 是运行时元数据，不是 DSL `<expr>` 内置变量。
+- 不能和 `auth_bearer`、`auth_header_key`、`auth_oauth_bearer` 或 OAuth token 交换指令混用。
 
 ### 5.3 request（请求处理）
 
@@ -470,6 +485,31 @@ upstream {
 - 支持多条
 - 执行顺序：先执行所有 `del_query`，再执行所有 `set_query`
 
+#### AWS SDK transport 下的 set_path
+
+`transport aws_sdk` 仍然复用 `set_path` 表达 Bedrock Runtime 目标资源：
+
+```conf
+upstream {
+  set_path template("/model/${request.model_mapped}/invoke");
+}
+```
+
+流式 Bedrock Runtime：
+
+```conf
+upstream {
+  set_path template("/model/${request.model_mapped}/invoke-with-response-stream");
+}
+```
+
+说明：
+
+- `/model/{modelId}/invoke` 映射为 Bedrock Runtime `InvokeModel`。
+- `/model/{modelId}/invoke-with-response-stream` 映射为 Bedrock Runtime `InvokeModelWithResponseStream`。
+- `modelId` 通常使用 `$request.model_mapped`，支持 base model ID、inference profile ID 或 ARN。
+- `upstream` 在 request model 映射之后生效，因此 path template 可以取到 `model_map` 的结果。
+
 ### 5.5 response（响应处理）
 
 该 phase 会选择响应策略。对 `resp_passthrough` / `resp_map` / `sse_parse` 这类策略指令，如写多条，**最后一条生效**。`sse_collect` 是独立的非流式前置聚合步骤，可以后接 `resp_map`。
@@ -531,6 +571,40 @@ response { sse_collect <mode>; }
 - `openai_responses_to_openai_chat`（`resp_map`）：OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks`（`sse_parse`）：OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
+AWS Bedrock 简例：
+
+```conf
+provider "aws-bedrock" {
+  defaults {
+    upstream_config {
+      transport aws_sdk;
+      # base_url = "https://bedrock-runtime.us-east-1.amazonaws.com";
+    }
+    auth {
+      auth_sigv4_bedrock;
+    }
+    request {
+      after_req_map {
+        json_set "$.anthropic_version" "bedrock-2023-05-31";
+      }
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    request {
+      model_map "claude-3-5-sonnet-20241022" "anthropic.claude-3-5-sonnet-20241022-v2:0";
+      req_map openai_chat_to_anthropic_messages;
+    }
+    upstream {
+      set_path template("/model/${request.model_mapped}/invoke");
+    }
+    response {
+      resp_map anthropic_to_openai_chat;
+    }
+  }
+}
+```
+
 #### json_del / json_set / json_replace / json_set_if_absent / json_rename（响应 JSON 操作）
 
 这些指令会对下游响应体做**尽力而为（best-effort）**的 JSON 变换：
@@ -554,19 +628,21 @@ response {
 - `json_set` 会创建缺失路径；`json_replace` 只替换已存在路径，适合替换上游响应中的 `model` 字段而不污染其它事件。
 - `json_set`、`json_replace`、`json_set_if_absent` 的值表达式支持 `template(...)`
 - 流式 SSE 中，`json_set`、`json_replace`、`json_set_if_absent`、`json_del`、`json_rename` 可追加 `event="<name|name2>"`，按 SSE `event:` 名过滤执行。
+- response JSON 操作还可在带 `event="..."` 时追加 `event_optional=true`：如果运行时有 event，仍必须匹配指定事件名；如果没有 event 上下文，则允许按普通 JSON 匹配回退执行。
 - response JSON 操作可追加 `max_count=<n>` 限制单条指令在一次响应处理周期内的最大生效次数；默认 `max_count=0` 表示不限次数。
 
 ```conf
 response {
   resp_passthrough;
-  json_replace "$.message.model" $request.model event="message_start" max_count=1;
-  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+  json_set "$.response.metadata.gateway" "onr" event="response.completed" event_optional=true;
+  json_replace "$.message.model" $request.model event="message_start" event_optional=true max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete" event_optional=true;
 }
 ```
 
-- `event="..."` 只影响 SSE JSON event；非流式 JSON 响应没有 event 上下文，带 event 的响应 JSON 操作会跳过。
+- `event="..."` 只影响 SSE JSON event；非流式 JSON 响应没有 event 上下文，带 event 的响应 JSON 操作会跳过，除非该指令支持并启用了 `event_optional=true`。
+- `event_optional=true` 必须与 `event` 同时出现；当运行时没有 event 上下文时，这条指令会退化为普通 JSON 匹配。
 - `max_count` 按单条指令计数：非流式 JSON 最多处理一次对象；SSE 会跨整个 stream 累计。只有实际修改成功才计数，例如 `json_replace` 路径不存在时不计数。
-- 响应 JSON 操作不支持 `event_optional=true`；需要兼容缺失 `event:` 的上游时，应使用不带 event 的指令或在上游映射阶段补齐 event。
 
 限制（v0.1）：
 
@@ -656,7 +732,6 @@ models_mode "openai" {
 - `models_mode` 块内支持和 `models` phase 相同的指令：`models_mode`、`method`、`path`、`id_path`、`id_regex`、`id_allow_regex`、`set_header`、`del_header`。
 - `models_mode` 内部也可以继续通过 `models_mode <other_mode>;` 引用另一个 `models_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`models_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/modes/models_modes.conf` 会定义 `openai`、`gemini` 和 `vertex` 这几个全局 `models_mode` 预设；如果你在 DSL 里声明同名 `models_mode`，就会覆盖这份默认预设。
 
 #### balance_mode（全局可复用 balance 预设）
 
@@ -1291,8 +1366,22 @@ Context: defaults
 Multiple: no
 ```
 
-- `base_url` 必填，且必须是字符串字面量（固定 URL）。
-- 同时 `base_url` 仍是默认值：当渠道（DB）配置了 `base_url` 时优先使用渠道配置；仅当渠道 `base_url` 为空时才使用此处值。
+- `transport http` 时，`base_url` 必填且必须是非空字符串字面量（固定 URL）。
+- `transport aws_sdk` 时，`base_url` 可选；非空时作为 SDK endpoint override，不配置时由 SDK 按 region 派生 endpoint。
+- 当渠道（DB）配置了 `base_url` 时优先使用渠道配置；仅当渠道 `base_url` 为空时才使用此处值。
+
+#### transport
+
+```text
+Syntax:  transport http|aws_sdk;
+Default: http
+Context: upstream_config
+Multiple: yes（最后一条生效）
+```
+
+- 声明上游传输方式。
+- `http` 使用普通 HTTP `base_url + path/query` 路由。
+- `aws_sdk` 使用 AWS SDK Bedrock Runtime transport。
 
 ### 7.4 auth（鉴权）
 
@@ -1346,6 +1435,19 @@ Multiple: yes
 ```
 
 - 效果：设置 `Authorization: Bearer <oauth.access_token>`。
+
+#### auth_sigv4_bedrock
+
+```text
+Syntax:  auth_sigv4_bedrock;
+Default: —
+Context: auth
+Multiple: yes
+```
+
+- 声明当前 provider 使用 AWS Bedrock SigV4 与 AWS SDK transport。
+- 不向普通 HTTP header 注入 `$channel.key`。
+- 不能和 `auth_bearer`、`auth_header_key`、`auth_oauth_bearer` 或 OAuth token 交换指令混用。
 
 #### OAuth 相关指令
 
@@ -1457,7 +1559,7 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set <jsonpath> <expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1467,12 +1569,13 @@ Multiple: yes
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `<expr>` 在此处支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效；`0` 表示不限次数，`n > 0` 表示本指令在一次响应处理周期内最多实际修改 `n` 次。
 
 #### json_replace
 
 ```text
-Syntax:  json_replace <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_replace <jsonpath> <expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1483,12 +1586,13 @@ Multiple: yes
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `<expr>` 支持同 `json_set`。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set_if_absent <jsonpath> <expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1497,12 +1601,13 @@ Multiple: yes
 - 仅当路径不存在时设置字段。
 - 若路径已存在（包括值为 `null`），则保留原值不覆盖。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1511,12 +1616,13 @@ Multiple: yes
 - 删除字段；字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1525,6 +1631,7 @@ Multiple: yes
 - 将字段从 `<from-jsonpath>` 移动到 `<to-jsonpath>`；源字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_wrap_input_text
@@ -2081,10 +2188,15 @@ Multiple: yes
 
 - `models_mode openai`：默认 `/v1/models`
 - `models_mode gemini`：默认 `/v1beta/models`
+- `models_mode bedrock`：默认使用 `config/modes/models_modes.conf` 中的 `/foundation-models`
 - 默认 `config/modes/models_modes.conf` 里的 `vertex` 预设会查询 Google publisher base models：
   - `path /v1beta1/publishers/google/models`
   - `id_path $.publisherModels[*].name`
   - `id_regex ^publishers/google/models/(.+)$`
+- 默认 `config/modes/models_modes.conf` 里的 `bedrock` 预设会查询 AWS Bedrock foundation models：
+  - `path /foundation-models`
+  - `id_path $.modelSummaries[*].modelId`
+  - 当 provider 使用 `transport aws_sdk` 时，ONR 会查询 Bedrock control-plane endpoint `https://bedrock.<region>.amazonaws.com`，并使用 SigV4 service `bedrock` 签名
 - `models_mode custom`：必填
 - `path` 可以使用 `template("...")`；模板字面量必须以 `/`、`http://` 或 `https://` 开头。
 - 如果省略 `models_mode`，但已经声明了 `path`、`id_path`、`id_regex`、`id_allow_regex` 等自定义查询字段，ONR 会自动按 `models_mode custom;` 处理。
@@ -2100,6 +2212,7 @@ Multiple: yes
 
 - `models_mode openai`：默认 `$.data[*].id`
 - `models_mode gemini`：默认 `$.models[*].name`
+- `models_mode bedrock`：默认使用 `config/modes/models_modes.conf` 中的 `$.modelSummaries[*].modelId`
 - `models_mode custom`：至少需要一个 `id_path`
 
 #### id_regex / id_allow_regex
