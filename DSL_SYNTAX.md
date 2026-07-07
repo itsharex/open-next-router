@@ -352,7 +352,7 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_replace / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
+#### json_set / json_replace / json_set_if_absent / json_del / json_del_if_missing / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
 
 ```conf
 request {
@@ -367,6 +367,7 @@ request {
   after_req_map {
     json_set "$.anthropic_version" "bedrock-2023-05-31";
     json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+    json_del_if_missing "$.tool_choice" "$.tools";
   }
   json_del "$.tools";
 }
@@ -378,6 +379,7 @@ request {
 - `json_set` sets a field and creates missing object-path parents.
 - `json_replace` only replaces an existing target path; missing paths are no-op and no parent object or leaf field is created.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
+- `json_del_if_missing` deletes the target path when a required path is missing; useful for removing companion fields after previous transforms remove their dependency.
 - `json_wrap_input_text` wraps a string value as an OpenAI Responses `input` message list. Missing paths and already-array values are no-op; other types are rejected.
 - `json_set_header_values` sets a JSON array from downstream request header values. Values are split by comma unless `separator="<sep>"` is provided.
 - `json_filter_values` filters an existing JSON string array by allowed values or wildcard patterns.
@@ -1601,6 +1603,31 @@ Multiple: yes
 - `event="..."` only applies to response SSE JSON ops.
 - `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
+
+#### json_del_if_missing
+
+```text
+Syntax:  json_del_if_missing <target-jsonpath> <required-jsonpath>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Deletes `<target-jsonpath>` when `<required-jsonpath>` is missing.
+- Missing target paths are no-op.
+- Both JSONPaths are limited to object paths: `$.a.b.c`.
+- This is useful after conditional request transforms where a companion field should only remain while its dependency still exists.
+
+Example:
+
+```conf
+request {
+  after_req_map {
+    json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+    json_del_if_missing "$.tool_choice" "$.tools";
+  }
+}
+```
 
 #### json_rename
 

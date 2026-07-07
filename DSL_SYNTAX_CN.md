@@ -365,7 +365,7 @@ request {
 - 当没有任何 `model_map <from> ...;` 命中时，使用该默认表达式作为 `$request.model_mapped`
 - 如未配置该指令：`$request.model_mapped` 默认等于 `$request.model`
 
-#### json_set / json_replace / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition（可多条）
+#### json_set / json_replace / json_set_if_absent / json_del / json_del_if_missing / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition（可多条）
 
 ```conf
 request {
@@ -380,6 +380,7 @@ request {
   after_req_map {
     json_set "$.anthropic_version" "bedrock-2023-05-31";
     json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+    json_del_if_missing "$.tool_choice" "$.tools";
   }
   json_del "$.tools";
 }
@@ -393,6 +394,7 @@ request {
 - `json_set`：设置字段；不存在的对象路径会自动创建
 - `json_replace`：仅当目标路径已存在时替换字段；路径不存在时为 no-op，不会创建缺失对象或字段
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
+- `json_del_if_missing`：当依赖路径不存在时删除目标路径，常用于前序变换删除依赖对象后同步移除伴随字段
 - `json_wrap_input_text`：当路径值是字符串时，将其包装成 OpenAI Responses `input` message 列表；路径不存在或值已经是数组时为 no-op，其他类型会报错
 - `json_set_header_values`：从原始下游用户请求 header 中读取条目并写成 JSON 字符串数组，不读取 request header 规则准备发送给上游的 header。默认按逗号拆分，可用 `separator="<sep>"` 覆盖；不接受额外过滤参数，需要过滤时在后面显式配置 `json_filter_values`
 - `json_filter_values`：过滤已有 JSON 字符串数组，只保留允许的值或通配符匹配项
@@ -1620,6 +1622,31 @@ Multiple: yes
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
 - `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
+
+#### json_del_if_missing
+
+```text
+Syntax:  json_del_if_missing <target-jsonpath> <required-jsonpath>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- 当 `<required-jsonpath>` 不存在时，删除 `<target-jsonpath>`。
+- 如果目标路径不存在，则为 no-op。
+- 两个 JSONPath 都仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
+- 适用于条件请求变换之后：只有依赖字段仍存在时，伴随字段才应保留。
+
+示例：
+
+```conf
+request {
+  after_req_map {
+    json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+    json_del_if_missing "$.tool_choice" "$.tools";
+  }
+}
+```
 
 #### json_rename
 
