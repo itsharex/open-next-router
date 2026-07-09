@@ -512,3 +512,80 @@ func TestApplyReqMap_StructFirstWrapperModes(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_ResponseFormat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("json_schema sets output_config", func(t *testing.T) {
+		t.Parallel()
+		body := []byte(`{
+			"model":"claude-3-5-sonnet-20240620",
+			"messages":[{"role":"user","content":"hi"}],
+			"max_tokens":128,
+			"response_format":{
+				"type":"json_schema",
+				"json_schema":{"name":"result","schema":{"type":"object","additionalProperties":false}}
+			}
+		}`)
+		_, root, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		outputConfig, ok := root["output_config"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected output_config to be set, got %#v", root["output_config"])
+		}
+		format, ok := outputConfig["format"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected output_config.format to be set, got %#v", outputConfig["format"])
+		}
+		if format["type"] != "json_schema" {
+			t.Fatalf("expected output_config.format.type=json_schema, got %#v", format["type"])
+		}
+	})
+
+	t.Run("json_object returns error", func(t *testing.T) {
+		t.Parallel()
+		body := []byte(`{
+			"model":"claude-3-5-sonnet-20240620",
+			"messages":[{"role":"user","content":"hi"}],
+			"response_format":{"type":"json_object"}
+		}`)
+		_, _, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+		if err == nil {
+			t.Fatalf("expected error for json_object, got nil")
+		}
+	})
+
+	t.Run("missing additionalProperties:false returns error", func(t *testing.T) {
+		t.Parallel()
+		body := []byte(`{
+			"model":"claude-3-5-sonnet-20240620",
+			"messages":[{"role":"user","content":"hi"}],
+			"response_format":{
+				"type":"json_schema",
+				"json_schema":{"name":"result","schema":{"type":"object"}}
+			}
+		}`)
+		_, _, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+		if err == nil {
+			t.Fatalf("expected error when additionalProperties is not false, got nil")
+		}
+	})
+
+	t.Run("text type leaves output_config unset", func(t *testing.T) {
+		t.Parallel()
+		body := []byte(`{
+			"model":"claude-3-5-sonnet-20240620",
+			"messages":[{"role":"user","content":"hi"}],
+			"response_format":{"type":"text"}
+		}`)
+		_, root, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := root["output_config"]; ok {
+			t.Fatalf("expected no output_config for text format, got %#v", root["output_config"])
+		}
+	})
+}
