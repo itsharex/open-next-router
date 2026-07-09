@@ -156,39 +156,6 @@ func openAIMessageToClaudeMessage(msg map[string]any) apitypes.JSONObject {
 }
 */
 
-// mapResponseFormatToOutputConfig is only called by the commented-out
-// MapOpenAIChatCompletionsToClaudeMessagesRequestObject.
-// TODO: delete once that function is deleted.
-/*
-func mapResponseFormatToOutputConfig(raw any) (apitypes.JSONObject, error) {
-	rf, _ := raw.(map[string]any)
-	if rf == nil {
-		return nil, nil
-	}
-	rfType := strings.TrimSpace(jsonutil.CoerceString(rf["type"]))
-	switch rfType {
-	case "json_object":
-		return nil, fmt.Errorf("response_format type json_object is not supported for Claude: use json_schema with an explicit schema instead")
-	case "json_schema":
-		js, _ := rf["json_schema"].(map[string]any)
-		// Reading from a nil map in Go is safe (returns zero value), so js["schema"] is
-		// valid even when js is nil. The nil check below covers both cases.
-		schema, _ := js["schema"].(map[string]any)
-		if schema == nil {
-			return nil, fmt.Errorf("response_format type json_schema requires a non-empty json_schema.schema")
-		}
-		if ap, ok := schema["additionalProperties"].(bool); !ok || ap {
-			return nil, fmt.Errorf("response_format json_schema.schema must set additionalProperties to false (Claude requires strict schema validation)")
-		}
-		return apitypes.JSONObject{
-			"format": apitypes.JSONObject{"type": "json_schema", "schema": schema},
-		}, nil
-	default:
-		return nil, nil
-	}
-}
-*/
-
 // mapOpenAIToolsToClaude is only called by the commented-out
 // MapOpenAIChatCompletionsToClaudeMessagesRequestObject.
 // TODO: delete once that function is deleted.
